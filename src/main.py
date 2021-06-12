@@ -6,6 +6,11 @@ import param
 
 def main(argv:List[str])->None:
 	param_dict = param.parse_args(argv)
+	print(param_dict)
+	if param_dict.get('file', None) is None:
+		print('No input image file')
+		sys.exit(-1)
+
 	img = cv.imread(param_dict['file'], cv.IMREAD_UNCHANGED)
 	"""
 	IMREAD_UNCHANGED

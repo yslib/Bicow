@@ -1,7 +1,6 @@
 from PIL import Image, ImageDraw, ImageFont
 import sys
 
-
 if __name__ == "__main__":
     fileNames = sys.argv[1:]
     count = len(sys.argv)
@@ -10,7 +9,7 @@ if __name__ == "__main__":
 
         nsize = (int(img.size[0] * 0.4),int(img.size[1] * 0.4))
         img = img.resize(nsize,Image.BILINEAR)
-        
+
         text = "YSLucida"
         txtImage = Image.new("RGBA",nsize,(0,0,0,0))
         fnt = ImageFont.truetype("C:\Windows\Fonts\msyhbd.ttc",100)

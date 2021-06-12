@@ -14,7 +14,6 @@ def parse_args(argv:List[str])->Dict[str, str]:
 		if opt == '-i':
 			param['file'] = arg
 		if opt in ('--json', ):
-			# reading params from json
 			with open(arg, 'r') as jf:
 				param =json.load(jf)
 			break
