@@ -22,10 +22,23 @@ def w_uniform(z)->ti.Vector:
 	res[2] = 1 if z[2] >= Zmin and z[2] <= Zmax else 0
 	return res
 
+@ti.func
+def gaussian(x:ti.f32)->ti.f32:
+	return ti.exp(-4.0 * ((x-0.5)**2)/0.25)
+
+@ti.func
+def w_gaussian(z)->ti.Vector:
+	res = ti.Vector([0.0,0.0,0.0])
+	res[0] = gaussian(z[0]/65535.0) if z[0] >= Zmin and z[0] <= Zmax else 0.0
+	res[1] = gaussian(z[1]/65535.0) if z[1] >= Zmin and z[1] <= Zmax else 0.0
+	res[2] = gaussian(z[2]/65535.0) if z[2] >= Zmin and z[2] <= Zmax else 0.0
+	return res
 
 @ti.func
 def w(z):
-	return w_uniform(z)
+	# return w_uniform(z)
+	# return w_gaussian(z)
+	return ti.Vector([1.0, 1.0, 1.0])
 
 @ti.func
 def sum_of_weighted_intensity(i,j)->ti.f32:
@@ -33,9 +46,9 @@ def sum_of_weighted_intensity(i,j)->ti.f32:
 
 @ti.func
 def sum_of_weighted_radiance_log(i, j, t1:ti.f32, t2:ti.f32, t3:ti.f32):
-	val1 = low_img[i, j] + 1
-	val2 = nml_img[i, j] + 1
-	val3 = high_img[i, j] + 1
+	val1 = low_img[i, j]
+	val2 = nml_img[i, j]
+	val3 = high_img[i, j]
 	a = w(val1) * (ti.log(val1) - ti.log(t1)) + w(val2) * (ti.log(val2) - ti.log(t2)) + w(val3) * (ti.log(val3) - ti.log(t3))
 	return a
 
@@ -93,8 +106,8 @@ def geometric_mean(image)->ti.f32:
 @ti.kernel
 def hdr_comp(ind: ti.template(), t1:float, t2:float, t3:float):
 	# composition
-	# log_hdr(output,t1,t2,t3)
-	linear_hdr(output,t1,t2,t3)
+	log_hdr(output,t1,t2,t3)
+	# linear_hdr(output,t1,t2,t3)
 
 	# tone mapping
 	gm = geometric_mean(output)
@@ -121,7 +134,7 @@ def pipeline(nml, low, high, size):
 		low_img.from_numpy(low[ind][1])
 		nml_img.from_numpy(nml[ind][1])
 		high_img.from_numpy(high[ind][1])
-		hdr_comp(frame, low[ind][0]['shutter'], nml[ind][0]['shutter'],high[ind][0]['shutter'])
+		hdr_comp(frame, low[ind][0]['shutter'] * 0.1, nml[ind][0]['shutter'] * 0.1,high[ind][0]['shutter'] * 0.1)
 		res = output.to_numpy()
 		output_imgs.append(res)
 
