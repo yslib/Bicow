@@ -15,12 +15,13 @@ K = 0.15
 B = 0.95
 
 @ti.func
-def w_uniform(z):
+def w_uniform(z)->ti.Vector:
 	res = ti.Vector([0,0,0])
 	res[0] = 1 if z[0] >= Zmin and z[0] <= Zmax else 0
 	res[1] = 1 if z[1] >= Zmin and z[1] <= Zmax else 0
 	res[2] = 1 if z[2] >= Zmin and z[2] <= Zmax else 0
 	return res
+
 
 @ti.func
 def w(z):
@@ -120,7 +121,7 @@ def pipeline(nml, low, high, size):
 		low_img.from_numpy(low[ind][1])
 		nml_img.from_numpy(nml[ind][1])
 		high_img.from_numpy(high[ind][1])
-		hdr_comp(frame, low[ind][0]['shutter']*5, nml[ind][0]['shutter'] * 5,high[ind][0]['shutter']*5)
+		hdr_comp(frame, low[ind][0]['shutter'], nml[ind][0]['shutter'],high[ind][0]['shutter'])
 		res = output.to_numpy()
 		output_imgs.append(res)
 

@@ -42,7 +42,7 @@ def open_raw(filename):
             meta['shutter'] =eval(val)
 
     with rawpy.imread(filename) as raw:
-        rgb = raw.postprocess(gamma=(1,1), no_auto_bright=True, output_bps=16)
+        rgb = raw.postprocess(gamma=(1,1), no_auto_bright=True, output_bps=16, use_auto_wb=True)
 
     return meta, rgb
 
