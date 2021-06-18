@@ -1,48 +1,58 @@
 from numpy.core.fromnumeric import shape
+from numpy.lib.ufunclike import isneginf
 import taichi as ti
 from taichi.core.util import in_docker
 from taichi.lang.ops import exp, log, max
+import numpy as np
+import imageio
 
 low_img = None
 nml_img = None
 high_img = None
 output = None
+w1_img = None
+w2_img = None
+w3_img = None
 
-Zmin = 0.05 * 65535
-Zmax = 0.95 * 65535
+Zmin = 0.05
+Zmax = 0.95
 
-K = 0.15
+K = 0.18
 B = 0.95
 
 @ti.func
 def w_uniform(z)->ti.Vector:
-	res = ti.Vector([0,0,0])
-	res[0] = 1 if z[0] >= Zmin and z[0] <= Zmax else 0
-	res[1] = 1 if z[1] >= Zmin and z[1] <= Zmax else 0
-	res[2] = 1 if z[2] >= Zmin and z[2] <= Zmax else 0
-	return res
+	return ti.Vector([1.0, 1.0, 1.0]) * (z >= Zmin and z<=Zmax)
 
 @ti.func
-def gaussian(x:ti.f32)->ti.f32:
+def gaussian(x)->ti.Vector:
 	return ti.exp(-4.0 * ((x-0.5)**2)/0.25)
 
 @ti.func
 def w_gaussian(z)->ti.Vector:
-	res = ti.Vector([0.0,0.0,0.0])
-	res[0] = gaussian(z[0]/65535.0) if z[0] >= Zmin and z[0] <= Zmax else 0.0
-	res[1] = gaussian(z[1]/65535.0) if z[1] >= Zmin and z[1] <= Zmax else 0.0
-	res[2] = gaussian(z[2]/65535.0) if z[2] >= Zmin and z[2] <= Zmax else 0.0
-	return res
+	return gaussian(z) * (z >= Zmin and z <= Zmax)
+
+@ti.func
+def w_tent(z)->ti.Vector:
+	return min(z, 1.0-z) * (z >= Zmin and z <= Zmax)
+
+@ti.func
+def w_photo(z, t)->ti.Vector:
+	pass
 
 @ti.func
 def w(z):
-	# return w_uniform(z)
-	# return w_gaussian(z)
-	return ti.Vector([1.0, 1.0, 1.0])
+	a = z/65535.0
+	# return w_uniform(a)
+	# return w_tent(a)
+	# return w_tent(z.normalized())
+	return w_gaussian(a)
+	# return ti.Vector([128,128,128])
 
 @ti.func
-def sum_of_weighted_intensity(i,j)->ti.f32:
-	return w(low_img[i,j]) + w(nml_img[i,j]) + w(high_img[i,j])
+def sum_of_weight(i,j):
+	res = w(low_img[i,j]) + w(nml_img[i,j]) + w(high_img[i,j])
+	return res
 
 @ti.func
 def sum_of_weighted_radiance_log(i, j, t1:ti.f32, t2:ti.f32, t3:ti.f32):
@@ -64,7 +74,7 @@ def sum_of_weighted_radiance_linear(i, j, t1,t2,t3):
 def log_hdr(output, t1,t2,t3):
 	for i,j in output:
 		no = sum_of_weighted_radiance_log(i, j, t1,t2,t3)
-		de = sum_of_weighted_intensity(i, j)
+		de = sum_of_weight(i, j)
 		output[i,j] = ti.exp(no / de)
 		if any(de == 0):
 			if de[0] == 0:
@@ -77,8 +87,8 @@ def log_hdr(output, t1,t2,t3):
 @ti.func
 def linear_hdr(output, t1,t2,t3):
 	for i,j in output:
-		no = sum_of_weighted_radiance_linear(i, j, t1,t2,t3)
-		de = sum_of_weighted_intensity(i, j)
+		no = sum_of_weighted_radiance_linear(i, j, t1, t2, t3)
+		de = sum_of_weight(i, j)
 		output[i,j] = no / de
 		if any(de == 0):
 			if de[0] == 0:
@@ -96,18 +106,32 @@ def max_intensity(image):
 	return res * B
 
 @ti.func
-def geometric_mean(image)->ti.f32:
-	sum = ti.Vector([0.0, 0.0, 0.0])
+def geometric_mean(image):
+	sum = 0.0 # ti.Vector([0.0, 0.0, 0.0])
+	inv_n = 1.0/(image.shape[0] * image.shape[1] * 1.0)
 	for i,j in image:
-		sum += ti.log(image[i, j] + 1.0)
-	sum /= (image.shape[0] * image.shape[1] * 1.0)
+		sum += inv_n * ti.log(image[i, j].dot(ti.Vector([0.6,0.3,0.1])) + 1.0)
 	return ti.exp(sum)
+
+@ti.func
+def max_val(image):
+	res = ti.Vector([0,0,0])
+	for i,j in image:
+		res = max(res,image[i,j])
+	return res
+
 
 @ti.kernel
 def hdr_comp(ind: ti.template(), t1:float, t2:float, t3:float):
 	# composition
-	log_hdr(output,t1,t2,t3)
-	# linear_hdr(output,t1,t2,t3)
+	# log_hdr(output,t1,t2,t3)
+	linear_hdr(output,t1,t2,t3)
+
+	# debug, generate weight map
+	for i,j in output:
+		w1_img[i,j] = w(low_img[i, j]) * 255
+		w2_img[i,j] = w(nml_img[i, j]) * 255
+		w3_img[i,j] = w(high_img[i, j]) * 255
 
 	# tone mapping
 	gm = geometric_mean(output)
@@ -115,27 +139,35 @@ def hdr_comp(ind: ti.template(), t1:float, t2:float, t3:float):
 	print(gm, mi)
 
 	for i, j in output:
-		i_hdr_bar = K/gm * output[i,j]
-		output[i, j] = (i_hdr_bar * (1 + i_hdr_bar/(mi**2)))/(1 + i_hdr_bar) * 255
+		scaled = (output[i,j]/gm) *K
+		# output[i, j] = (scaled * (1.0 + scaled/(mi**2)))/(1.0 + scaled) * 255.0
+		output[i, j] = scaled/(1.0+scaled) * 255.0
 
 def pipeline(nml, low, high, size):
 	ti.init(arch=ti.gpu)
-	global low_img, nml_img, high_img, output, img_arr
+	global low_img, nml_img, high_img, output, w1_img, w2_img, w3_img
 
 	frame = len(nml)
-	img_arr = [None for i in range(10)]
 	low_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
 	nml_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
 	high_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
+	w1_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
+	w2_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
+	w3_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
+
 	output = ti.Vector.field(size[2], ti.i32, shape=(size[0], size[1]))
+
 	output_imgs = []
 
 	for ind in range(frame):
 		low_img.from_numpy(low[ind][1])
 		nml_img.from_numpy(nml[ind][1])
 		high_img.from_numpy(high[ind][1])
-		hdr_comp(frame, low[ind][0]['shutter'] * 0.1, nml[ind][0]['shutter'] * 0.1,high[ind][0]['shutter'] * 0.1)
+		hdr_comp(frame, low[ind][0]['shutter'] * 1, nml[ind][0]['shutter'] * 1,high[ind][0]['shutter'] * 1)
 		res = output.to_numpy()
 		output_imgs.append(res)
+		imageio.imsave("w1_map.jpeg", w1_img.to_numpy())
+		imageio.imsave("w2_map.jpeg", w2_img.to_numpy())
+		imageio.imsave("w3_map.jpeg", w3_img.to_numpy())
 
 	return output_imgs
