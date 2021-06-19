@@ -1,5 +1,4 @@
 from typing import Dict, List, Any, Tuple
-import cv2 as cv
 import numpy as np
 import sys
 import param
@@ -7,15 +6,16 @@ import rawpy
 import os
 import taichi_backend
 import imageio
-import taichi as ti
 
 SOURCE_PATH = os.path.dirname(__file__)
+
 
 def open_raw(filename):
     import io
     import subprocess
 
-    proc = subprocess.Popen("dcraw -i -v {}".format(filename),shell=True,stdout=subprocess.PIPE)
+    proc = subprocess.Popen("dcraw -i -v {}".format(filename),
+                            shell=True, stdout=subprocess.PIPE)
     out, err = proc.communicate()
     out = io.StringIO(out.decode())
     lines = out.readlines()
@@ -23,12 +23,14 @@ def open_raw(filename):
     for p in lines:
         if p.startswith('Shutter: '):
             val = p[9:-4]
-            meta['shutter'] =eval(val)
+            meta['shutter'] = eval(val)
 
     with rawpy.imread(filename) as raw:
-        rgb = raw.postprocess(gamma=(1,1), no_auto_bright=True, output_bps=16, use_auto_wb=True)
+        rgb = raw.postprocess(
+            gamma=(1, 1), no_auto_bright=True, output_bps=16, use_auto_wb=True)
 
     return meta, rgb
+
 
 if __name__ == '__main__':
     # main(sys.argv)
@@ -46,11 +48,12 @@ if __name__ == '__main__':
     img2_param, img_rbg2 = open_raw(raw_nml)
     img3_param, img_rbg3 = open_raw(raw_high)
 
-    ldr_image_stack = np.array([img_rbg1,img_rbg2,img_rbg3])
-    shutters = np.array([img1_param['shutter'],img2_param['shutter'],img2_param['shutter'] ])
+    ldr_image_stack = np.array([img_rbg1, img_rbg2, img_rbg3])
+    shutters = np.array(
+        [img1_param['shutter'], img2_param['shutter'], img2_param['shutter']])
 
     print(ldr_image_stack.shape, shutters)
-    output = taichi_backend.pipeline(shutters, ldr_image_stack, size=(4180, 6264, 3))
+    output = taichi_backend.pipeline(shutters, ldr_image_stack, True)
 
     name = 'output.jpeg'
     print('save image: {}'.format(name))
