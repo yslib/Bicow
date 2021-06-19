@@ -1,18 +1,10 @@
-from numpy.core.fromnumeric import shape
-from numpy.lib.ufunclike import isneginf
 import taichi as ti
-from taichi.core.util import in_docker
-from taichi.lang.ops import exp, log, max
 import numpy as np
-import imageio
 
-low_img = None
-nml_img = None
-high_img = None
+ti_ldr_image_stack = None
+ti_shutters = None
+ti_weight_map_stack = None
 output = None
-w1_img = None
-w2_img = None
-w3_img = None
 
 Zmin = 0.05
 Zmax = 0.95
@@ -50,31 +42,33 @@ def w(z):
 	# return ti.Vector([128,128,128])
 
 @ti.func
-def sum_of_weight(i,j):
-	res = w(low_img[i,j]) + w(nml_img[i,j]) + w(high_img[i,j])
-	return res
+def sum_of_weight(n, i,j):
+	sum = ti.Vector([0.0,0.0,0.0])
+	for ind in range(n):
+		sum += w(ti_ldr_image_stack[ind,i,j])
+	return sum
 
 @ti.func
-def sum_of_weighted_radiance_log(i, j, t1:ti.f32, t2:ti.f32, t3:ti.f32):
-	val1 = low_img[i, j]
-	val2 = nml_img[i, j]
-	val3 = high_img[i, j]
-	a = w(val1) * (ti.log(val1) - ti.log(t1)) + w(val2) * (ti.log(val2) - ti.log(t2)) + w(val3) * (ti.log(val3) - ti.log(t3))
-	return a
+def sum_of_weighted_radiance_log(n, i, j):
+	sum = ti.Vector([0.0,0.0,0.0])
+	for ind in range(n):
+		val = ti_ldr_image_stack[ind,i,j]
+		sum += w(val) * (ti.log(val) - ti.log(ti_shutters[ind]))
+	return sum
 
 @ti.func
-def sum_of_weighted_radiance_linear(i, j, t1,t2,t3):
-	val1 = low_img[i, j] + 1
-	val2 = nml_img[i, j] + 1
-	val3 = high_img[i, j] + 1
-	a = w(val1) * (val1/t1) + w(val2) * (val2/t2) + w(val3) * (val3/t3)
-	return a
+def sum_of_weighted_radiance_linear(n, i, j):
+	sum = ti.Vector([0.0,0.0,0.0])
+	for ind in range(n):
+		val = ti_ldr_image_stack[ind,i,j] + 1
+		sum += w(val) * (val/ti_shutters[ind])
+	return sum
 
 @ti.func
-def log_hdr(output, t1,t2,t3):
+def log_hdr(n, output):
 	for i,j in output:
-		no = sum_of_weighted_radiance_log(i, j, t1,t2,t3)
-		de = sum_of_weight(i, j)
+		no = sum_of_weighted_radiance_log(n, i, j)
+		de = sum_of_weight(n,i, j)
 		output[i,j] = ti.exp(no / de)
 		if any(de == 0):
 			if de[0] == 0:
@@ -85,10 +79,10 @@ def log_hdr(output, t1,t2,t3):
 				output[i, j][2] = 0
 
 @ti.func
-def linear_hdr(output, t1,t2,t3):
-	for i,j in output:
-		no = sum_of_weighted_radiance_linear(i, j, t1, t2, t3)
-		de = sum_of_weight(i, j)
+def linear_hdr(n,output):
+	for i, j in output:
+		no = sum_of_weighted_radiance_linear(n, i, j)
+		de = sum_of_weight(n, i, j)
 		output[i,j] = no / de
 		if any(de == 0):
 			if de[0] == 0:
@@ -102,7 +96,7 @@ def linear_hdr(output, t1,t2,t3):
 def max_intensity(image):
 	res = ti.Vector([0.0,0.0,0.0])
 	for i, j in image:
-		res = max(res, image[i, j])
+		res = ti.max(res, image[i, j])
 	return res * B
 
 @ti.func
@@ -117,57 +111,40 @@ def geometric_mean(image):
 def max_val(image):
 	res = ti.Vector([0,0,0])
 	for i,j in image:
-		res = max(res,image[i,j])
+		res = ti.max(res,image[i,j])
 	return res
 
 
 @ti.kernel
-def hdr_comp(ind: ti.template(), t1:float, t2:float, t3:float):
+def hdr_comp(x:ti.f32):
 	# composition
-	# log_hdr(output,t1,t2,t3)
-	linear_hdr(output,t1,t2,t3)
-
-	# debug, generate weight map
-	for i,j in output:
-		w1_img[i,j] = w(low_img[i, j]) * 255
-		w2_img[i,j] = w(nml_img[i, j]) * 255
-		w3_img[i,j] = w(high_img[i, j]) * 255
-
+	# log_hdr(n, output)
+	n = 3
+	linear_hdr(n,output)
 	# tone mapping
 	gm = geometric_mean(output)
 	mi = max_intensity(output)
-	print(gm, mi)
-
 	for i, j in output:
 		scaled = (output[i,j]/gm) *K
 		# output[i, j] = (scaled * (1.0 + scaled/(mi**2)))/(1.0 + scaled) * 255.0
 		output[i, j] = scaled/(1.0+scaled) * 255.0
 
-def pipeline(nml, low, high, size):
+	print(gm, mi)
+	# debug, generate weight map
+	for k,j,i in ti_weight_map_stack:
+		ti_weight_map_stack[k,i,j] = w(ti_ldr_image_stack[k,i, j]) * 255
+
+
+def pipeline(shutters ,ldr_image_stack, size):
 	ti.init(arch=ti.gpu)
-	global low_img, nml_img, high_img, output, w1_img, w2_img, w3_img
-
-	frame = len(nml)
-	low_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
-	nml_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
-	high_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
-	w1_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
-	w2_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
-	w3_img = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1]))
-
+	global output,ti_ldr_image_stack,ti_weight_map_stack,ti_shutters
+	n = 3
 	output = ti.Vector.field(size[2], ti.i32, shape=(size[0], size[1]))
+	ti_weight_map_stack = ti.Vector.field(size[2], ti.i32, shape=(size[0],size[1] ,n))
+	ti_ldr_image_stack = ti.Vector.field(size[2], ti.i32, shape=(n,size[0],size[1]))
+	ti_shutters = ti.field(ti.f32, shape=n)
 
-	output_imgs = []
-
-	for ind in range(frame):
-		low_img.from_numpy(low[ind][1])
-		nml_img.from_numpy(nml[ind][1])
-		high_img.from_numpy(high[ind][1])
-		hdr_comp(frame, low[ind][0]['shutter'] * 1, nml[ind][0]['shutter'] * 1,high[ind][0]['shutter'] * 1)
-		res = output.to_numpy()
-		output_imgs.append(res)
-		imageio.imsave("w1_map.jpeg", w1_img.to_numpy())
-		imageio.imsave("w2_map.jpeg", w2_img.to_numpy())
-		imageio.imsave("w3_map.jpeg", w3_img.to_numpy())
-
-	return output_imgs
+	ti_ldr_image_stack.from_numpy(ldr_image_stack);
+	ti_shutters.from_numpy(shutters)
+	hdr_comp(n)
+	return output

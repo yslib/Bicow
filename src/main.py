@@ -7,25 +7,9 @@ import rawpy
 import os
 import taichi_backend
 import imageio
+import taichi as ti
 
 SOURCE_PATH = os.path.dirname(__file__)
-
-def main(argv: List[str])->None:
-    param_dict = param.parse_args(argv)
-    print(param_dict)
-    if param_dict.get('file', None) is None:
-        print('No input image file')
-        sys.exit(-1)
-
-    img = cv.imread(param_dict['file'], cv.IMREAD_UNCHANGED)
-    """
-    IMREAD_UNCHANGED
-    IMREAD_GRAYSCALE
-    IMREAD_COLOR
-    IMREAD_ANYDEPTH
-    IMREAD_ANYCOLOR
-    """
-    print(img.shape, img.dtype, img.min(), img.max())
 
 def open_raw(filename):
     import io
@@ -46,29 +30,28 @@ def open_raw(filename):
 
     return meta, rgb
 
-
-
 if __name__ == '__main__':
     # main(sys.argv)
-
     raw_low = '../data/sunset_low.CR2'
     raw_nml = '../data/sunset_nml.CR2'
     raw_high = '../data/sunset_high.CR2'
+    param_dict = param.parse_args(sys.argv)
 
+    # param_dict = param.parse_args(sys.argv)
+    # cfg = param_dict.get('cfg', {})
+    # if param_dict.get('interactive', False):
+    #     pass
 
-    low = []
-    low.append(tuple(open_raw(raw_low)))
-    nml = []
-    nml.append(tuple(open_raw(raw_nml)))
-    high = []
-    high.append(tuple(open_raw(raw_high)))
+    img1_param, img_rbg1 = open_raw(raw_low)
+    img2_param, img_rbg2 = open_raw(raw_nml)
+    img3_param, img_rbg3 = open_raw(raw_high)
 
-    print(low[0][1].shape)
+    ldr_image_stack = np.array([img_rbg1,img_rbg2,img_rbg3])
+    shutters = np.array([img1_param['shutter'],img2_param['shutter'],img2_param['shutter'] ])
 
-    imgs = taichi_backend.pipeline(nml,low,high, size=(4180, 6264, 3))
-    ind = 0
-    for img in imgs:
-        name = 'img_{}.jpeg'.format(ind)
-        ind += 1
-        print('save image: {}'.format(name))
-        imageio.imsave(name,img)
+    print(ldr_image_stack.shape, shutters)
+    output = taichi_backend.pipeline(shutters, ldr_image_stack, size=(4180, 6264, 3))
+
+    name = 'output.jpeg'
+    print('save image: {}'.format(name))
+    imageio.imsave(name,output.to_numpy())
