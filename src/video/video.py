@@ -1,9 +1,8 @@
 import cv2
 import sys
 import os
-from types import List,Any, Dict
 
-def make_video_cv(params:Dict[str,Any])->Any:
+def make_video_cv(params):
     fps = params.get('fps', 24)
     output = params.get('output_file', 'video.avi')
     resl = params.get('resolution', (3840, 1920))
@@ -30,26 +29,27 @@ def make_video_cv(params:Dict[str,Any])->Any:
 
     vw.release()
 
-def read_image_files(params:Dict[str,Any])->List[str]:
+def read_image_files(params):
     input_dir = params.get('input_dir', '.')
     for root, dirs, files in os.walk(input_dir, topdown=False):
-        files = list(filter(lambda x: x.endswith('.png'), files))
-        files = sorted(files, key=lambda x: int(x.split('.')[0][4:]))
-        files = map(lambda x: os.path.join(input_dir, x), files)
+        files = list(filter(lambda x: x.endswith('.tif'), files))
+        files = sorted(files, key=lambda x: int(x.split('.')[0][7:]))
+        files = list(map(lambda x: os.path.join(input_dir, x), files))
     return files
 
 
-def video(params:Dict[str,str])->None:
+def video(params):
     files = read_image_files(params)
+    print(files)
     params['files'] = files
     make_video_cv(params)
 
 if __name__ == '__main__':
     params = {}
     params['input_dir'] = '.'
-    if sys.argc > 1:
+    if len(sys.argv) > 1:
         params['input_dir'] = sys.argv[1]
-    params['resolution'] = (1920, 1080)
-    params['output_file'] = 'video.avi'
-    params['fps'] = 24
+    params['resolution'] = (7968, 5320)
+    params['output_file'] = 'D:\\photo\\2021-6-25\\output\\output.avi'
+    params['fps'] = 30
     video(params)

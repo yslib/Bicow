@@ -45,11 +45,11 @@ if __name__ == "__main__":
         print(path,fullname,fname,ext)
 
 
-        thumbsize = (int(img.size[0] * 0.1),int(img.size[1] * 0.1))
+        thumbsize = (int(img.size[0] * 0.05),int(img.size[1] * 0.05))
         thumbImg = img.resize(thumbsize,Image.BILINEAR)
         thumbImg.convert("RGB").save("./thumbnails/"+fname+"_thum.jpg")
         count+=1
-        
+
         txtImage = Image.new("RGBA",img.size,(0,0,0,0))
         fnt = ImageFont.truetype("C:\Windows\Fonts\STXINGKA.TTF",100)
         d = ImageDraw.Draw(txtImage)
@@ -58,4 +58,4 @@ if __name__ == "__main__":
 
         out = Image.alpha_composite(img,txtImage)
         out.convert("RGBA").save("./watermark/"+fname+"_wm.png")
-        
+

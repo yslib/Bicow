@@ -131,6 +131,7 @@ def max_val(image):
     return res
 
 
+
 @ti.kernel
 def hdr_comp(n: ti.template()):
     # composition
@@ -148,15 +149,14 @@ def hdr_comp(n: ti.template()):
         ti_output[i, j] = (scaled * (1.0 + scaled/(mi**2)))/(1.0 + scaled) * 255.0
         # ti_output[i, j] = scaled/(1.0+scaled) * 255.0
 
-    # print(gm,mi)
-
     # debug, generate weight map
+
     for k, j, i in ti_weight_map_stack:
         ti_weight_map_stack[k, i, j] = w(ti_ldr_image_stack[k, i, j]) * 255
 
 
 @ti.func
-def resize(output_image,input_image):
+def resize(output_image, input_image):
 
     scale_i = input_image.shape[1] * 1.0 / output_image.shape[0] # rotate
     scale_j = input_image.shape[0] * 1.0 / output_image.shape[1]
@@ -172,10 +172,11 @@ def resize(output_image,input_image):
 
 
 @ti.kernel
-def convert_to_rgb8():
+def convert_to_display():
     resize(ti_output_show, ti_output)
     for i,j in ti_output_show:
         ti_output_show[i,j] = ti_output_show[i,j] / 255.0
+
 
 def create_ti_variables(shape):
     global ti_output, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_output_show
@@ -186,11 +187,12 @@ def create_ti_variables(shape):
     size = (shape[1], shape[2])  # image size
 
     ti_output = ti.Vector.field(channel, ti.i32, shape=(size[0], size[1]))
-    ti_weight_map_stack = ti.Vector.field(
-        channel, ti.i32, shape=(n, size[0], size[1]))
     ti_ldr_image_stack = ti.Vector.field(
         channel, ti.i32, shape=(n, size[0], size[1]))
     ti_shutters = ti.field(ti.f32, shape=n)
+
+    ti_weight_map_stack = ti.Vector.field(
+        channel, ti.i32, shape=(n, size[0], size[1]))
 
     K = ti.field(ti.f32, shape=())
     B = ti.field(ti.f32, shape=())
@@ -246,7 +248,7 @@ def pipeline(shutters, ldr_image_stack, preview_window):
             K[None] = slider_k.value
             B[None] = slider_b.value
             hdr_comp(n)
-            convert_to_rgb8()
+            convert_to_display()
             gui.set_image(ti_output_show)
             gui.show()
     else:
