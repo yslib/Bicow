@@ -2,24 +2,27 @@ from numpy.core.fromnumeric import shape
 import taichi as ti
 from taichi.lang.impl import default_cfg
 
+ti_window_size = None
+ti_sub_window_size = None
+ti_sub_window_layout = None
+
 ti_ldr_image_stack = None
 ti_shutters = None
 ti_weight_map_stack = None
-ti_output_show = None
-ti_output = None
+ti_canvas = None
+ti_hdr_image = None
 
+ti_K = None
+ti_B = None
 
-K = None
-B = None
+ti_Zmin = None
+ti_Zmax = None
 
-Zmin = None
-Zmax = None
-
-CHANNEL_MAX_NUM = 65536.0
+CHANNEL_MAX_NUM = 65535.0
 
 @ti.func
 def w_uniform(z) -> ti.Vector:
-    return ti.Vector([1.0, 1.0, 1.0]) * (z >= Zmin and z <= Zmax)
+    return ti.Vector([1.0, 1.0, 1.0]) * (z >= ti_Zmin and z <= ti_Zmax)
 
 @ti.func
 def gaussian(x) -> ti.Vector:
@@ -27,11 +30,11 @@ def gaussian(x) -> ti.Vector:
 
 @ti.func
 def w_gaussian(z) -> ti.Vector:
-    return gaussian(z) * (z >= Zmin and z <= Zmax)
+    return gaussian(z) * (z >= ti_Zmin and z <= ti_Zmax)
 
 @ti.func
 def w_tent(z) -> ti.Vector:
-    return min(z, 1.0-z) * (z >= Zmin and z <= Zmax)
+    return min(z, 1.0-z) * (z >= ti_Zmin and z <= ti_Zmax)
 
 @ti.func
 def w_photo(z, t) -> ti.Vector:
@@ -39,12 +42,12 @@ def w_photo(z, t) -> ti.Vector:
 
 @ti.func
 def w(z):
-    a = z/65535.0
+    a = z/CHANNEL_MAX_NUM
     # return w_uniform(a)
     # return w_tent(a)
     # return w_tent(z.normalized())
-    # return w_gaussian(a)
-    return ti.Vector([1.0,1.0,1.0])
+    return w_gaussian(a)
+    # return ti.Vector([1.0,1.0,1.0])
     # return ti.Vector([128,128,128])
 
 
@@ -110,7 +113,7 @@ def max_intensity(image):
     res = ti.Vector([0.0, 0.0, 0.0])
     for i, j in image:
         res = ti.max(res, image[i, j])
-    return res * B[None]
+    return res * ti_B[None]
 
 
 @ti.func
@@ -136,17 +139,17 @@ def max_val(image):
 def hdr_comp(n: ti.template()):
     # composition
     # log_hdr(n, ti_output)
-    linear_hdr(n, ti_output)
+    linear_hdr(n, ti_hdr_image)
 
     # tone mapping
-    gm = geometric_mean(ti_output)
-    mi = max_intensity(ti_output)
+    gm = geometric_mean(ti_hdr_image)
+    mi = max_intensity(ti_hdr_image)
     print(mi)
-    mi = K[None]/gm * mi
+    mi = ti_K[None]/gm * mi
 
-    for i, j in ti_output:
-        scaled = (ti_output[i, j]/gm) * K[None]
-        ti_output[i, j] = (scaled * (1.0 + scaled/(mi**2)))/(1.0 + scaled) * 255.0
+    for i, j in ti_hdr_image:
+        scaled = (ti_hdr_image[i, j]/gm) * ti_K[None]
+        ti_hdr_image[i, j] = (scaled * (1.0 + scaled/(mi**2)))/(1.0 + scaled) * 255.0
         # ti_output[i, j] = scaled/(1.0+scaled) * 255.0
 
     # debug, generate weight map
@@ -158,18 +161,28 @@ def hdr_comp(n: ti.template()):
 @ti.func
 def resize(output_image, input_image):
 
-    scale_i = input_image.shape[1] * 1.0 / output_image.shape[0] # rotate
-    scale_j = input_image.shape[0] * 1.0 / output_image.shape[1]
+    sub_windows = 0
 
-    original_height = input_image.shape[0]
+    for i in range(ti_sub_window_size[0]):
+        for j in range(ti_sub_window_size[1]):
+            I = ti.Vector([i, j])
+            P = ti.cast(I * scale, ti.i32)
+            P[0], P[1] = original_height - P[1], P[0] # rotate and flip up and down
+            ti_canvas[I] = ti_hdr_image[P] / 255.0  # hdr for display
 
-    scale = ti.Vector([scale_i, scale_j])
-    P = ti.Vector([0, 0])
-    for I in ti.grouped(output_image):
-        P = ti.cast(I * scale, ti.i32)
-        P[0], P[1] = original_height - P[1], P[0] # rotate and flip up and down for displaying
-        output_image[I] = input_image[P]
+    sub_windows += 1
 
+    for k in range(ti_weight_map_stack.shape[0]):
+        ind = k + sub_windows
+        offset = ti.Vector([ind%ti_sub_window_layout[0], ind//ti_sub_window_layout[0]]) * ti_sub_window_size
+        for i in range(ti_sub_window_size[0]):
+            for j in range(ti_sub_window_size[1]):
+                I = ti.Vector([i, j])
+                P = ti.cast(I * scale, ti.i32)
+                P[0], P[1] = original_height - P[1], P[0] # rotate and flip up and down
+                ti_canvas[I + offset] = ti_weight_map_stack[k, P[0],P[1]]
+
+    sub_windows += 3
 
 @ti.kernel
 def convert_to_display():
@@ -179,8 +192,8 @@ def convert_to_display():
 
 
 def create_ti_variables(shape):
-    global ti_output, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_output_show
-    global K, B, Zmin, Zmax
+    global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
+    global ti_K, ti_B, ti_Zmin, ti_Zmax
 
     n = shape[0]  # number of images in stack
     channel = shape[3]  # pixel channel
@@ -197,27 +210,24 @@ def create_ti_variables(shape):
     K = ti.field(ti.f32, shape=())
     B = ti.field(ti.f32, shape=())
 
-    Zmin = ti.field(ti.f32, shape=())
-    Zmax = ti.field(ti.f32, shape=())
+    ti_Zmin = ti.field(ti.f32, shape=())
+    ti_Zmax = ti.field(ti.f32, shape=())
 
 
 def initialize_ti_varibles(ldr_image_stack, shutters):
-    global ti_output, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_output_show
-    global K, B, Zmin, Zmax
+    global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
+    global ti_K, ti_B, ti_Zmin, ti_Zmax
 
     ti_ldr_image_stack.from_numpy(ldr_image_stack)
     ti_shutters.from_numpy(shutters)
-    Zmin[None] = 0.05
-    Zmax[None] = 0.95
+    ti_Zmin[None] = 0.05
+    ti_Zmax[None] = 0.95
 
-    K[None] = 0.18
-    B[None] = 0.95
+    ti_K[None] = 0.18
+    ti_B[None] = 0.95
 
 def pipeline(shutters, ldr_image_stack, preview_window):
     ti.init(arch=ti.gpu, default_fp = ti.f64)
-
-    global ti_output, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_output_show
-    global K, B, Zmin, Zmax
 
     shape = ldr_image_stack.shape  # (n, width, height, channel)
     create_ti_variables(shape)
@@ -230,27 +240,41 @@ def pipeline(shutters, ldr_image_stack, preview_window):
 	So all creation must be done before any assignment
 	"""
 
+    sub_window_size = (400,300)
+    sub_window_layout = (4, 1)
+    window_size = (sub_window_size[0] * sub_window_layout[0], sub_window_size[1] * sub_window_layout[1])
+    global ti_canvas, ti_window_size, ti_sub_window_layout,ti_sub_window_size
     if preview_window:
-        window_size = (1920,1080)
         gui = ti.GUI('Cameray: The Best HDR Image Compositor in Binjiang District', window_size)
-        ti_output_show = ti.Vector.field(channel, ti.f32, shape=window_size)
-        initialize_ti_varibles(ldr_image_stack,shutters)
+        ti_canvas = ti.Vector.field(channel, ti.f32, shape=window_size)
+        ti_window_size = ti.Vector([*window_size])
+        ti_sub_window_layout = ti.Vector([*sub_window_layout])
+        ti_sub_window_size = ti.Vector([*sub_window_size])
+
+        initialize_ti_varibles(ldr_image_stack, shutters)
 
         # GUI widget varibles
 
-        global K, B
+        global ti_K, ti_B
         slider_k = gui.slider('Key', 0.0, 2.0, 0.01)
         slider_b = gui.slider('Burn', 0.0, 1.0, 0.01)
-        slider_k.value = K[None]
-        slider_b.value = B[None]
+        slider_k.value = ti_K[None]
+        slider_b.value = ti_B[None]
 
         while gui.running:
-            K[None] = slider_k.value
-            B[None] = slider_b.value
+            ti_K[None] = slider_k.value
+            ti_B[None] = slider_b.value
             hdr_comp(n)
             convert_to_display()
             gui.set_image(ti_output_show)
             gui.show()
     else:
-        initialize_ti_varibles(ldr_image_stack,shutters)
+        ti_canvas = ti.Vector.field(channel, ti.f32, shape=window_size)
+        ti_window_size = ti.Vector([*window_size])
+        ti_sub_window_layout = ti.Vector([*sub_window_layout])
+        ti_sub_window_size = ti.Vector([*sub_window_size])
+        initialize_ti_varibles(ldr_image_stack, shutters)
         hdr_comp(n)
+        convert_to_display()
+
+    return ti_canvas

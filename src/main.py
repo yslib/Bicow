@@ -39,10 +39,10 @@ if __name__ == '__main__':
     raw_high = '../data/sunset_high.CR2'
     param_dict = param.parse_args(sys.argv)
 
-    # param_dict = param.parse_args(sys.argv)
-    # cfg = param_dict.get('cfg', {})
-    # if param_dict.get('interactive', False):
-    #     pass
+    param_dict = param.parse_args(sys.argv)
+    cfg = param_dict.get('cfg', {})
+    if param_dict.get('interactive', False):
+        pass
 
     img1_param, img_rbg1 = open_raw(raw_low)
     img2_param, img_rbg2 = open_raw(raw_nml)
@@ -53,7 +53,7 @@ if __name__ == '__main__':
         [img1_param['shutter'], img2_param['shutter'], img2_param['shutter']])
 
     print(ldr_image_stack.shape, shutters)
-    output = taichi_backend.pipeline(shutters, ldr_image_stack, True)
+    output = taichi_backend.pipeline(shutters, ldr_image_stack, preview_window=True)
 
     name = 'output.jpeg'
     print('save image: {}'.format(name))
