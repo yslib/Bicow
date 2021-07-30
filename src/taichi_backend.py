@@ -59,7 +59,6 @@ def sum_of_weight(n, i, j):
     return sum
 
 
-
 @ti.func
 def sum_of_weighted_radiance_log(n, i, j):
     sum = ti.Vector([0.0, 0.0, 0.0])
@@ -227,7 +226,7 @@ def initialize_ti_varibles(ldr_image_stack, shutters):
     ti_B[None] = 0.95
 
 def pipeline(shutters, ldr_image_stack, preview_window):
-    ti.init(arch=ti.gpu, default_fp = ti.f64)
+    ti.init(arch=ti.cuda, default_fp = ti.f64, device_memory_GB=10)
 
     shape = ldr_image_stack.shape  # (n, width, height, channel)
     create_ti_variables(shape)

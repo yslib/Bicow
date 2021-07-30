@@ -22,7 +22,7 @@ def open_raw(filename):
     meta = {}
     for p in lines:
         if p.startswith('Shutter: '):
-            val = p[9:-4]
+            val = p[9:-5]
             meta['shutter'] = eval(val)
 
     with rawpy.imread(filename) as raw:
