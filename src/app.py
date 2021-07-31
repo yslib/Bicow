@@ -1,15 +1,23 @@
+from os import waitpid
 import dearpygui.dearpygui as dpg
-
+from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
+from typing import Dict, Any, List
 class App:
     def __init__(self) -> None:
         self._setup_uuid()
+        self._setup_fonts()
         self._setup_window()
         self._setup_viewport()
+
+    def _setup_fonts(self):
+        with dpg.font_registry():
+            dpg.add_font("C:\\Windows\\Fonts\\msyh.ttc", 18, default_font=True)
 
     def _setup_uuid(self):
         self._gui_id_app = dpg.generate_uuid()
         self._gui_id_img_preview = None
         self._gui_id_image_list_box = None
+        self._gui_id_image_bracket_list_box = None
 
     def _gui_add_image_preview(self, parent)->int:
         """
@@ -20,6 +28,14 @@ class App:
             with dpg.group(horizontal=True) as image_container_id:
                 pass
         return image_container_id
+
+    def _gui_add_popup(self, text:str, title='Window'):
+        x = dpg.get_viewport_client_width()
+        y = dpg.get_viewport_client_height()
+        with dpg.window(label=title, modal=True, pos=[x/2,y/2]) as modal_id:
+            dpg.add_text(text)
+            dpg.add_separator()
+            dpg.add_button(parent=modal_id,label="OK", width=75, callback=lambda: dpg.delete_item(modal_id))
 
     def _gui_add_parameter_panel(self, parent)->int:
         with dpg.child(autosize_x=True) as w:
@@ -50,8 +66,25 @@ class App:
     def _log(self, sender, app_data, user_data):
         pass
 
-    def _on_open_folder(self, s,a,u):
-        print('_on_open_folder',s,a,u)
+    def _on_open_image(self, sender:int, app_data:Dict[str,str], user_data:Any):
+        print(app_data)
+        if user_data == 'open_path':
+            path = app_data.get('current_path', None)
+            if not path:
+                self._gui_add_popup('Invalid path', 'Error')
+                return
+            image_brackets = open_path_as_brackets(path, 10)
+        elif user_data == 'open_bracket':
+            fullname = app_data.get('selections',{}).values()
+            image_brackets = open_image_as_bracket(fullname)
+        self._open_from_brackets(image_brackets)
+
+    def _open_from_brackets(self, image_brackets: List[ImageBracket]):
+        bracket_list_item = [b.name for b in image_brackets]
+        image_list_item = [i.filename for b in image_brackets for i in b.images]
+        # print(bracket_list_item, image_list_item)
+        dpg.configure_item(item=self._gui_id_image_list_box, items=image_list_item, num_items=20)
+        dpg.configure_item(item=self._gui_id_image_bracket_list_box, items=bracket_list_item, num_items=20)
 
     def _setup_timelapse_tab(self):
         with dpg.group(horizontal=True):
@@ -62,9 +95,11 @@ class App:
                 dpg.add_same_line()
                 dpg.add_button(label='Export')
                 with dpg.child(height=250):
-                    pass
+                    dpg.add_text('Brackets')
+                    self._gui_id_image_bracket_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200)
                 with dpg.child():
-                    self._gui_id_image_list_box = dpg.add_listbox(label='Image',items=[])
+                    dpg.add_text('Image')
+                    self._gui_id_image_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200)
             with dpg.child() as a:
                 self._gui_id_img_preview = self._gui_add_image_preview(a)
                 with dpg.group(horizontal=True):
@@ -101,10 +136,15 @@ class App:
             with dpg.menu_bar():
                 with dpg.menu(label="File"):
                     def open_folder_callback(s,a,u):
-                        with dpg.file_dialog(label="Open Folder",callback=self._on_open_folder):
+                        with dpg.file_dialog(label="Open Folder",callback=self._on_open_image,user_data='open_path'):
                             dpg.add_file_extension(".*", color=(255, 255, 255, 255))
 
-                    dpg.add_menu_item(label="Open Folder", callback=open_folder_callback)
+                    def open_brackets_callback(s,a,u):
+                        with dpg.file_dialog(label='Open Bracket',callback=self._on_open_image,user_data='open_bracket'):
+                            dpg.add_file_extension(".*", color=(255, 255, 255, 255))
+
+                    dpg.add_menu_item(label="Open Folder...", callback=open_folder_callback)
+                    dpg.add_menu_item(label="Open Bracket...", callback=open_brackets_callback)
 
             with dpg.tab_bar():
                 with dpg.tab(label="HDR Timelapse"):

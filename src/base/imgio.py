@@ -1,4 +1,3 @@
-import imageio
 import rawpy
 import os
 import io
@@ -95,9 +94,26 @@ class ImageBracket:
             ret = Image()
         return ret
 
+    @property
     def name(self):
         return self._bracket_name
 
+def open_image_as_bracket(fullnames:List[str], max_count:int=0):
+    images:List[Image] = []
+    count = 0
+    for fullname in fullnames:
+        if os.path.isfile(fullname) == True:
+            #TODO:: check if file is an image
+            if max_count > 0 and count >= max_count:
+                break
+            images.append(Image(fullname))
+            count += 1
+
+    def pred(image:Image):
+        return image.filename
+
+    images.sort(key=pred)
+    return [ImageBracket(images,'Bracket')]
 
 def open_path_as_brackets(path: str, max_count:int=0)->List[ImageBracket]:
     """
