@@ -1,6 +1,4 @@
-from numpy.core.fromnumeric import shape
 import taichi as ti
-from taichi.lang.impl import default_cfg
 from typing import List
 
 # declare ti param

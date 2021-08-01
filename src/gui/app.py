@@ -1,6 +1,11 @@
+import sys
+sys.path.append('..')
 from os import waitpid
+import sys
+sys.path.append('..')
 import configparser
 import dearpygui.dearpygui as dpg
+from core.cameray import CamerayHDR, cc_init, cc_shutdown
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
 from typing import Dict, Any, List, Tuple
 
@@ -14,6 +19,7 @@ class App:
         self._setup_fonts()
         self._setup_window()
         self._setup_viewport()
+        self._setup_cameray()
 
     def _on_app_close(self, s,a,u):
         dpg.delete_item(s)
@@ -33,8 +39,13 @@ class App:
         self._gui_id_img_preview:int = None
         self._gui_id_image_list_box:int = None
         self._gui_id_image_bracket_list_box:int = None
+        self._gui_id_parameter_panel_parent:int = None
         self._timelapse_result_image_id:int = None
         self._timelapse_image_image_series_id:List[int] = []
+
+    def _setup_cameray(self):
+        cc_init()
+        self._cc:CamerayHDR = None
 
     def _init_timelaplse_image(self,count:int, size:Tuple[int,int]):
         """
@@ -65,11 +76,6 @@ class App:
                 pass
         return image_container_id
 
-    def _create_image_serires_guid(self, count):
-        """
-        """
-        pass
-
     def _on_image_listbox_callback(self,sender,app_data,user_data):
         print(sender, app_data, user_data)
         pass
@@ -77,7 +83,6 @@ class App:
     def _on_bracket_listbox_callback(self, sender, app_data, user_data):
         print(sender, app_data, user_data)
         pass
-
 
     def _gui_add_popup(self, text:str, title='Window'):
         x = dpg.get_viewport_client_width()
@@ -89,27 +94,24 @@ class App:
 
     def _gui_add_parameter_panel(self, parent)->int:
         with dpg.child(autosize_x=True) as w:
-            dpg.add_text("Value", label="Label", show_label=True)
+            dpg.add_drag_float(label="B", default_value=0.0067, format="%.06f ns")
+            dpg.add_drag_float(label='Zmin')
+            dpg.add_drag_float(label='Zmax')
             dpg.add_combo(("AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIII", "JJJJ", "KKKK"), label="combo", default_value="AAAA")
-            dpg.add_input_text(label="input text", default_value="Hello, world!")
-            dpg.add_input_text(label="input text (w/ hint)", hint="enter text here")
             dpg.add_input_int(label="input int")
             dpg.add_input_float(label="input float")
             dpg.add_input_float(label="input scientific", format="%e")
             dpg.add_input_floatx(label="input floatx", default_value=[1,2,3,4])
             dpg.add_drag_int(label="drag int")
             dpg.add_drag_int(label="drag int 0..100", format="%d%%")
-            dpg.add_drag_float(label="drag float")
-            dpg.add_drag_float(label="drag small float", default_value=0.0067, format="%.06f ns")
             dpg.add_slider_int(label="slider int", max_value=3)
-            dpg.add_slider_float(label="slider float", max_value=1.0, format="ratio = %.3f")
+            dpg.add_slider_float(label="slider float", max_value=1.0, format="ratio = %.3f", callback=lambda a,u,s:print(a,u,s))
             dpg.add_slider_int(label="slider angle", min_value=-360, max_value=360, format="%d deg")
             dpg.add_color_edit((102, 179, 0, 128), label="color edit 4")
             dpg.add_color_edit(default_value=(.5, 1, .25, .1), label="color edit 4")
             dpg.add_listbox(("Apple", "Banana", "Cherry", "Kiwi", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"), label="listbox", num_items=4)
             dpg.add_color_button()
         return w
-
 
     def _log(self, sender, app_data, user_data):
         pass
@@ -133,6 +135,18 @@ class App:
         # print(bracket_list_item, image_list_item)
         dpg.configure_item(item=self._gui_id_image_list_box, items=image_list_item, num_items=20)
         dpg.configure_item(item=self._gui_id_image_bracket_list_box, items=bracket_list_item, num_items=20)
+        self._open_hdr_pipeline(image_brackets)
+
+    def _open_hdr_pipeline(self, braket_list:List[ImageBracket]):
+        self._cc = CamerayHDR(braket_list)
+        self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
+        # create parmeter panel
+
+    def _gui_add_bracket_preview(self):
+        pass
+
+    def _gui_add_result_image(self):
+        pass
 
     def _setup_timelapse_tab(self):
         with dpg.group(horizontal=True):
@@ -154,8 +168,8 @@ class App:
                     with dpg.child(width=800):
                         # result image
                         pass
-                    with dpg.child(width=100,autosize_x=True) as b:
-                        self._gui_add_parameter_panel = self._gui_add_parameter_panel(b)
+                    with dpg.child(width=200,autosize_x=True) as b:
+                        self._gui_id_parameter_panel_parent = b
                         pass
 
 
@@ -203,6 +217,3 @@ class App:
 
     def show(self):
         dpg.start_dearpygui()
-
-if __name__ == '__main__':
-    App().show()

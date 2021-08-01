@@ -1,11 +1,16 @@
-from typing import Dict, List, Any, Tuple
+import sys
+import os
+SOURCE_ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
+PROJECT_ROOT_DIR = os.path.dirname(SOURCE_ROOT_DIR)
+sys.path.append(SOURCE_ROOT_DIR)
+sys.path.append('.')
+from typing import List
 import numpy as np
 from base.imgio import ImageBracket, open_image_as_bracket, Image
-import os
+# from . import taichi_backend
 import taichi_backend
 import imageio
 from base.paramtype import FloatParam
-SOURCE_PATH = os.path.dirname(__file__)
 
 class HDRParamSet:
     """
@@ -25,7 +30,8 @@ class HDRParamSet:
 class CamerayHDR:
     def __init__(self, image_bracket_list:List[ImageBracket]):
         self._image_brackets = image_bracket_list
-        self._param_set = HDRParamSet()
+        taichi_backend.pipeline_param_init()
+        self._param_set:HDRParamSet = HDRParamSet()
 
     def process(self,index):
         if index >=0 and index < len(self._image_brackets):
@@ -38,22 +44,30 @@ class CamerayHDR:
             shutter.append(img.meta['shutter'])
         ldr_image_stack = np.array(imgs)
         shutters = np.array(shutter)
-        output = taichi_backend.pipeline(shutters, ldr_image_stack, preview_window=True)
+        output = taichi_backend.pipeline(shutters, ldr_image_stack, preview_window=False)
         return Image('', output.to_numpy())
 
     @property
     def param(self):
         return self._param_set
 
+
+def cc_init():
+    taichi_backend.pipeline_init()
+
+def cc_shutdown():
+    print('cc_shutdown')
+
+
 if __name__ == '__main__':
-    raw_low = SOURCE_PATH+'/../data/sunset_low.CR2'
-    raw_nml = SOURCE_PATH+'/../data/sunset_nml.CR2'
-    raw_high = SOURCE_PATH+'/../data/sunset_high.CR2'
+    cc_init()
+
+    raw_low = SOURCE_ROOT_DIR+'/../data/sunset_low.CR2'
+    raw_nml = SOURCE_ROOT_DIR+'/../data/sunset_nml.CR2'
+    raw_high = SOURCE_ROOT_DIR+'/../data/sunset_high.CR2'
     filenames = [raw_low, raw_nml, raw_high]
     print(filenames)
     brackets = open_image_as_bracket(filenames)
-    taichi_backend.pipeline_init()
-    taichi_backend.pipeline_param_init()
     cameray = CamerayHDR(brackets)
     output = cameray.process(0).data
     name = 'output.jpeg'
