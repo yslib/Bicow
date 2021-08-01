@@ -1,6 +1,9 @@
 from numpy.core.fromnumeric import shape
 import taichi as ti
 from taichi.lang.impl import default_cfg
+from typing import List
+
+# declare ti param
 
 ti_window_size = None
 ti_sub_window_size = None
@@ -19,6 +22,36 @@ ti_Zmin = None
 ti_Zmax = None
 
 CHANNEL_MAX_NUM = 65535.0
+
+def zmin_cb(val):
+    global ti_Zmin
+    ti_Zmin[None] = val
+
+def zmax_cb(val):
+    global ti_Zmax
+    ti_Zmax[None] = val
+
+def K_cb(val):
+    global ti_K
+    ti_K[None] = val
+
+def B_cb(val):
+    global ti_B
+    ti_B[None] = val
+
+def pipeline_param_init():
+    global ti_K, ti_B, ti_Zmin, ti_Zmax
+    ti_K = ti.field(ti.f32, shape=())
+    ti_B = ti.field(ti.f32, shape=())
+    ti_Zmin = ti.field(ti.f32, shape=())
+    ti_Zmax = ti.field(ti.f32, shape=())
+
+    ti_Zmin[None] = 0.05
+    ti_Zmax[None] = 0.95
+
+    ti_K[None] = 0.18
+    ti_B[None] = 0.95
+
 
 @ti.func
 def w_uniform(z) -> ti.Vector:
@@ -204,12 +237,6 @@ def create_ti_variables(shape):
         channel, ti.i32, shape=(n, size[0], size[1]))
     ti_shutters = ti.field(ti.f32, shape=n)
 
-    ti_K = ti.field(ti.f32, shape=())
-    ti_B = ti.field(ti.f32, shape=())
-
-    ti_Zmin = ti.field(ti.f32, shape=())
-    ti_Zmax = ti.field(ti.f32, shape=())
-
 
 def initialize_ti_varibles(ldr_image_stack, shutters):
     global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
@@ -217,14 +244,13 @@ def initialize_ti_varibles(ldr_image_stack, shutters):
 
     ti_ldr_image_stack.from_numpy(ldr_image_stack)
     ti_shutters.from_numpy(shutters)
-    ti_Zmin[None] = 0.05
-    ti_Zmax[None] = 0.95
 
-    ti_K[None] = 0.18
-    ti_B[None] = 0.95
 
-def pipeline(shutters, ldr_image_stack, preview_window):
+
+def pipeline_init():
     ti.init(arch=ti.gpu, default_fp = ti.f64, device_memory_fraction=0.3)
+
+def pipeline(shutters:List[int], ldr_image_stack, preview_window:bool):
 
     shape = ldr_image_stack.shape  # (n, width, height, channel)
     create_ti_variables(shape)

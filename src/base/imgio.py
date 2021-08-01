@@ -3,14 +3,15 @@ import os
 import io
 import subprocess
 from typing import Dict, Any, List
+import numpy as np
 
 class Image:
-    def __init__(self, fullname:str=''):
-        self._fullname = fullname
-        self._meta = {}
-        self._data = None
-        self._bracket = None
-        self._read = False
+    def __init__(self, fullname:str='', data=None):
+        self._fullname:str = fullname
+        self._data:np.ndarray = data
+        self._meta:Dict[str,Any] = {}
+        self._bracket:ImageBracket = None
+        self._read:bool = False if data is None else True
         self._read_meta_data(self._fullname)
 
         # read meta data
@@ -18,6 +19,8 @@ class Image:
         """
         Bad perfermance if reads a lot of images
         """
+        if filename == '':
+            return
         proc = subprocess.Popen("dcraw -i -v {}".format(filename),
                                 shell=True, stdout=subprocess.PIPE)
         out, err = proc.communicate()
@@ -54,7 +57,6 @@ class Image:
 
     def set_owner_bracket(self, bracket):
         self._bracket = bracket
-        pass
 
     @property
     def fullname(self):
@@ -81,6 +83,8 @@ class ImageBracket:
     def __init__(self,images:List[Image], bracket_name:str=''):
         self._bracket_name = bracket_name
         self._images = images
+        for img in self._images:
+            img.set_owner_bracket(self)
 
     @property
     def images(self)->List[Image]:

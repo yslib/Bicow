@@ -4,7 +4,6 @@ import dearpygui.dearpygui as dpg
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
 from typing import Dict, Any, List, Tuple
 
-
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
 
