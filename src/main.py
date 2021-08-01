@@ -34,9 +34,9 @@ def open_raw(filename):
 
 if __name__ == '__main__':
     # main(sys.argv)
-    raw_low = '../data/sunset_low.CR2'
-    raw_nml = '../data/sunset_nml.CR2'
-    raw_high = '../data/sunset_high.CR2'
+    raw_low = 'data/sunset_low.CR2'
+    raw_nml = 'data/sunset_nml.CR2'
+    raw_high = 'data/sunset_high.CR2'
     param_dict = param.parse_args(sys.argv)
 
     param_dict = param.parse_args(sys.argv)

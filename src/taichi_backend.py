@@ -206,8 +206,8 @@ def create_ti_variables(shape):
     ti_weight_map_stack = ti.Vector.field(
         channel, ti.i32, shape=(n, size[0], size[1]))
 
-    K = ti.field(ti.f32, shape=())
-    B = ti.field(ti.f32, shape=())
+    ti_K = ti.field(ti.f32, shape=())
+    ti_B = ti.field(ti.f32, shape=())
 
     ti_Zmin = ti.field(ti.f32, shape=())
     ti_Zmax = ti.field(ti.f32, shape=())

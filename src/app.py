@@ -1,23 +1,60 @@
 from os import waitpid
+import configparser
 import dearpygui.dearpygui as dpg
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
+
+
+CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
+CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
+
 class App:
     def __init__(self) -> None:
+        self._setup_init()
         self._setup_uuid()
         self._setup_fonts()
         self._setup_window()
         self._setup_viewport()
 
+    def _on_app_close(self, s,a,u):
+        dpg.delete_item(s)
+        self._app_config.write(open(CMR_CONFIG_FILE_PATH,'a'))
+        print('_on_app_close')
+
     def _setup_fonts(self):
         with dpg.font_registry():
-            dpg.add_font("C:\\Windows\\Fonts\\msyh.ttc", 18, default_font=True)
+            dpg.add_font(CMR_FONT_FILE_PATH, 18, default_font=True)
+
+    def _setup_init(self):
+        self._app_config = configparser.ConfigParser()
+        self._app_config.read(CMR_CONFIG_FILE_PATH)
 
     def _setup_uuid(self):
-        self._gui_id_app = dpg.generate_uuid()
-        self._gui_id_img_preview = None
-        self._gui_id_image_list_box = None
-        self._gui_id_image_bracket_list_box = None
+        self._gui_id_app:int = dpg.generate_uuid()
+        self._gui_id_img_preview:int = None
+        self._gui_id_image_list_box:int = None
+        self._gui_id_image_bracket_list_box:int = None
+        self._timelapse_result_image_id:int = None
+        self._timelapse_image_image_series_id:List[int] = []
+
+    def _init_timelaplse_image(self,count:int, size:Tuple[int,int]):
+        """
+        delete old image init new image
+        """
+        dpg.delete_item(self._timelapse_result_image_id)
+        for e in self._timelapse_image_image_series_id:
+            dpg.delete_item(e)
+        self._timelapse_image_image_series_id = []
+        self._timelapse_result_image_id = dpg.generate_uuid()
+        for i in range(count):
+            self._timelapse_image_image_series_id.append(dpg.generate_uuid())
+
+    def _set_result_image(self, image_id, data:List[float], size:Tuple[int,int]):
+        """
+        data must be arranged as a 4-channel list and each channel is range [0, 1]
+        """
+        dpg.add_dynamic_texture(size[0], size[1], data,id=image_id)
+
 
     def _gui_add_image_preview(self, parent)->int:
         """
@@ -28,6 +65,20 @@ class App:
             with dpg.group(horizontal=True) as image_container_id:
                 pass
         return image_container_id
+
+    def _create_image_serires_guid(self, count):
+        """
+        """
+        pass
+
+    def _on_image_listbox_callback(self,sender,app_data,user_data):
+        print(sender, app_data, user_data)
+        pass
+
+    def _on_bracket_listbox_callback(self, sender, app_data, user_data):
+        print(sender, app_data, user_data)
+        pass
+
 
     def _gui_add_popup(self, text:str, title='Window'):
         x = dpg.get_viewport_client_width()
@@ -60,8 +111,6 @@ class App:
             dpg.add_color_button()
         return w
 
-    def _on_app_close(self, s,a,u):
-        dpg.delete_item(s)
 
     def _log(self, sender, app_data, user_data):
         pass
@@ -96,10 +145,10 @@ class App:
                 dpg.add_button(label='Export')
                 with dpg.child(height=250):
                     dpg.add_text('Brackets')
-                    self._gui_id_image_bracket_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200)
+                    self._gui_id_image_bracket_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200,callback=self._on_bracket_listbox_callback)
                 with dpg.child():
                     dpg.add_text('Image')
-                    self._gui_id_image_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200)
+                    self._gui_id_image_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200, callback=self._on_bracket_listbox_callback)
             with dpg.child() as a:
                 self._gui_id_img_preview = self._gui_add_image_preview(a)
                 with dpg.group(horizontal=True):
@@ -136,7 +185,7 @@ class App:
             with dpg.menu_bar():
                 with dpg.menu(label="File"):
                     def open_folder_callback(s,a,u):
-                        with dpg.file_dialog(label="Open Folder",callback=self._on_open_image,user_data='open_path'):
+                        with dpg.file_dialog(label="Open Folder",callback=self._on_open_image,user_data='open_path',default_path=r'data'):
                             dpg.add_file_extension(".*", color=(255, 255, 255, 255))
 
                     def open_brackets_callback(s,a,u):
