@@ -36,6 +36,7 @@ def K_cb(val):
 def B_cb(val):
     global ti_B
     ti_B[None] = val
+    print('value update in taichi::B_cb()')
 
 def pipeline_param_init():
     print('taichi_backend.pipeline_param_init')

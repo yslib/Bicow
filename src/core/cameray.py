@@ -58,7 +58,6 @@ def cc_init():
 def cc_shutdown():
     print('cc_shutdown')
 
-
 if __name__ == '__main__':
     cc_init()
 

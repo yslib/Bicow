@@ -7,15 +7,15 @@ import configparser
 import dearpygui.dearpygui as dpg
 from core.cameray import CamerayHDR, cc_init, cc_shutdown
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
-from typing import Dict, Any, List, Tuple
-import queue
+from typing import Callable, Dict, Any, List, Tuple
+from base.msg_queue import get_msg_queue, msg
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
 
+msgqueue = get_msg_queue()
 class App:
     def __init__(self) -> None:
-        self._mq = queue.Queue()
         self._setup_init()
         self._setup_uuid()
         self._setup_fonts()
@@ -95,8 +95,12 @@ class App:
             dpg.add_button(parent=modal_id,label="OK", width=75, callback=lambda: dpg.delete_item(modal_id))
 
     def _gui_add_parameter_panel(self, parent)->int:
-        with dpg.child(autosize_x=True) as w:
-            dpg.add_drag_float(label="B", default_value=0.0067, format="%.06f ns")
+        with dpg.child(autosize_x=True, parent=parent) as w:
+
+            @msg
+            def B(val):
+                self._cc.param.b = val
+            dpg.add_drag_float(label="B", default_value=0.0067, format="%.06f ns", callback=lambda s,a,u:B(a))
             dpg.add_drag_float(label='Zmin')
             dpg.add_drag_float(label='Zmax')
             dpg.add_combo(("AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIII", "JJJJ", "KKKK"), label="combo", default_value="AAAA")
@@ -140,15 +144,11 @@ class App:
         self._open_hdr_pipeline(image_brackets)
 
     def _open_hdr_pipeline(self, braket_list:List[ImageBracket]):
-        def msg():
+        @msg
+        def e():
             self._cc = CamerayHDR(braket_list)
-            # self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
-            import threading
-            print('_open_hdr_pipeline thread id: ', threading.current_thread().name, threading.get_ident())
-        self._mq.put(msg)
-        #  self._cc = CamerayHDR(braket_list)
-        #  self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
-        # create parmeter panel
+            self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
+        e()
 
     def _gui_add_bracket_preview(self):
         pass
@@ -178,7 +178,6 @@ class App:
                         pass
                     with dpg.child(width=200,autosize_x=True) as b:
                         self._gui_id_parameter_panel_parent = b
-                        pass
 
 
     def _gui_viewport_resize_event(self, sender, a, u):
@@ -229,8 +228,8 @@ class App:
             dpg.setup_dearpygui(viewport=vp)
             dpg.show_viewport(vp)
         while(dpg.is_dearpygui_running()):
-            if self._mq.empty() is False:
-                msg = self._mq.get()
-                callable(msg) and msg()
+            while not msgqueue.empty():
+                event = msgqueue.get()
+                callable(event) and event()
             dpg.render_dearpygui_frame()
         dpg.cleanup_dearpygui()
