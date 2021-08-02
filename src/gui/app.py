@@ -8,12 +8,14 @@ import dearpygui.dearpygui as dpg
 from core.cameray import CamerayHDR, cc_init, cc_shutdown
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
 from typing import Dict, Any, List, Tuple
+import queue
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
 
 class App:
     def __init__(self) -> None:
+        self._mq = queue.Queue()
         self._setup_init()
         self._setup_uuid()
         self._setup_fonts()
@@ -138,8 +140,14 @@ class App:
         self._open_hdr_pipeline(image_brackets)
 
     def _open_hdr_pipeline(self, braket_list:List[ImageBracket]):
-        self._cc = CamerayHDR(braket_list)
-        self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
+        def msg():
+            self._cc = CamerayHDR(braket_list)
+            # self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
+            import threading
+            print('_open_hdr_pipeline thread id: ', threading.current_thread().name, threading.get_ident())
+        self._mq.put(msg)
+        #  self._cc = CamerayHDR(braket_list)
+        #  self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
         # create parmeter panel
 
     def _gui_add_bracket_preview(self):
@@ -216,4 +224,13 @@ class App:
                     pass
 
     def show(self):
-        dpg.start_dearpygui()
+        if not dpg.is_viewport_created():
+            vp = dpg.create_viewport()
+            dpg.setup_dearpygui(viewport=vp)
+            dpg.show_viewport(vp)
+        while(dpg.is_dearpygui_running()):
+            if self._mq.empty() is False:
+                msg = self._mq.get()
+                callable(msg) and msg()
+            dpg.render_dearpygui_frame()
+        dpg.cleanup_dearpygui()

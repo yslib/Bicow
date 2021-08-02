@@ -38,6 +38,7 @@ def B_cb(val):
     ti_B[None] = val
 
 def pipeline_param_init():
+    print('taichi_backend.pipeline_param_init')
     global ti_K, ti_B, ti_Zmin, ti_Zmax
     ti_K = ti.field(ti.f32, shape=())
     ti_B = ti.field(ti.f32, shape=())
