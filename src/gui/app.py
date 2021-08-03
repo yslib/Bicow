@@ -1,4 +1,6 @@
 import sys
+
+from numpy.lib.function_base import select
 sys.path.append('..')
 from os import waitpid
 import sys
@@ -14,7 +16,20 @@ CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
 
 def bind_param(item:int, param:HDRParamSet, name:str):
-    pass
+    prop = param.__class__.__dict__[name]
+    @msg
+    def value(val):
+        setattr(param, name, val)
+
+    dpg.configure_item(item,
+            default_value=getattr(param, name, 0),
+            min_value=prop.min_value,
+            max_value=prop.max_value,
+            format="%.02f",
+            speed=0.01,
+            callback=lambda s,a,u:value(a))
+
+
 
 msgqueue = get_msg_queue()
 class App:
@@ -99,53 +114,14 @@ class App:
 
     def _gui_add_parameter_panel(self, parent)->int:
         with dpg.child(autosize_x=True, parent=parent) as w:
-
-            @msg
-            def B(val):
-                self._cc.param.b = val
-            dpg.add_drag_float(label="B", 
-                    default_value=self._cc.param.b,
-                    min_value=self._cc.param.__class__.b.min_value,
-                    max_value=self._cc.param.__class__.b.max_value,
-                    format="%.02f", 
-                    speed=0.01,
-                    callback=lambda s,a,u:B(a))
-
-            @msg
-            def K(val):
-                self._cc.param.k = val
-
-            dpg.add_drag_float(label="K", 
-                    default_value=self._cc.param.k,
-                    min_value=self._cc.param.__class__.k.min_value,
-                    max_value=self._cc.param.__class__.k.max_value,
-                    format="%.02f", 
-                    speed=0.01,
-                    callback=lambda s,a,u:K(a))
-
-            @msg
-            def Zmin(val):
-                self._cc.param.zmin = val
-
-            dpg.add_drag_float(label="Zmin", 
-                    default_value=self._cc.param.zmin,
-                    min_value=self._cc.param.__class__.zmin.min_value,
-                    max_value=self._cc.param.__class__.zmax.max_value,
-                    format="%.02f", 
-                    speed=0.01,
-                    callback=lambda s,a,u:Zmin(a))
-
-            @msg
-            def Zmax(val):
-                self._cc.param.zmax = val
-
-            dpg.add_drag_float(label="Zmax", 
-                    default_value=self._cc.param.zmax,
-                    min_value=self._cc.param.__class__.zmax.min_value,
-                    max_value=self._cc.param.__class__.zmax.max_value,
-                    format="%.02f", 
-                    speed=0.01,
-                    callback=lambda s,a,u:Zmax(a))
+            item = dpg.add_drag_float(label="K")
+            bind_param(item, self._cc.param, 'k')
+            item = dpg.add_drag_float(label="B")
+            bind_param(item, self._cc.param, 'b')
+            item = dpg.add_drag_float(label="Zmin")
+            bind_param(item, self._cc.param, 'zmin')
+            item = dpg.add_drag_float(label="Zmax")
+            bind_param(item, self._cc.param, 'zmax')
 
             #  dpg.add_combo(("AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIII", "JJJJ", "KKKK"), label="combo", default_value="AAAA")
             #  dpg.add_input_int(label="input int")

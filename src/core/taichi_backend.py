@@ -23,14 +23,17 @@ CHANNEL_MAX_NUM = 65535.0
 
 def zmin_cb(val):
     global ti_Zmin
+    print('value update in taichi::zmin_cb()')
     ti_Zmin[None] = val
 
 def zmax_cb(val):
     global ti_Zmax
+    print('value update in taichi::zmax_cb()')
     ti_Zmax[None] = val
 
 def K_cb(val):
     global ti_K
+    print('value update in taichi::K_cb()')
     ti_K[None] = val
 
 def B_cb(val):
