@@ -23,26 +23,26 @@ class Param:
 class IntParam(Param):
     def __init__(self, name, min:int=0,max:int=100, cb=None):
         super(IntParam, self).__init__(name, cb)
-        self._min = min
-        self._max = max
+        self.min_value = min
+        self.max_value = max
 
     def __set__(self, ins, val):
         if not isinstance(val, int):
             raise TypeError('Expected an int')
-        val = max(self._min, min(val,self._max))
+        val = max(self.min_value, min(val,self.max_value))
         self._set_val(ins, val)
 
 
 class FloatParam(Param):
     def __init__(self, name:str, min:float=0.0, max:float=1.0, cb=None):
         super(FloatParam, self).__init__(name,cb)
-        self._min = min
-        self._max = max
+        self.min_value = min
+        self.max_value = max
 
     def __set__(self, ins, val):
         if not isinstance(val, float):
             raise TypeError('Expected float type')
-        val = max(self._min, min(val,self._max))
+        val = max(self.min_value, min(val,self.max_value))
         self._set_val(ins, val)
 
 

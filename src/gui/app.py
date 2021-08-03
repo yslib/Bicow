@@ -5,13 +5,16 @@ import sys
 sys.path.append('..')
 import configparser
 import dearpygui.dearpygui as dpg
-from core.cameray import CamerayHDR, cc_init, cc_shutdown
+from core.cameray import CamerayHDR,HDRParamSet, cc_init, cc_shutdown
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
 from typing import Callable, Dict, Any, List, Tuple
 from base.msg_queue import get_msg_queue, msg
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
+
+def bind_param(item:int, param:HDRParamSet, name:str):
+    pass
 
 msgqueue = get_msg_queue()
 class App:
@@ -100,23 +103,64 @@ class App:
             @msg
             def B(val):
                 self._cc.param.b = val
-            dpg.add_drag_float(label="B", default_value=0.0067, format="%.06f ns", callback=lambda s,a,u:B(a))
-            dpg.add_drag_float(label='Zmin')
-            dpg.add_drag_float(label='Zmax')
-            dpg.add_combo(("AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIII", "JJJJ", "KKKK"), label="combo", default_value="AAAA")
-            dpg.add_input_int(label="input int")
-            dpg.add_input_float(label="input float")
-            dpg.add_input_float(label="input scientific", format="%e")
-            dpg.add_input_floatx(label="input floatx", default_value=[1,2,3,4])
-            dpg.add_drag_int(label="drag int")
-            dpg.add_drag_int(label="drag int 0..100", format="%d%%")
-            dpg.add_slider_int(label="slider int", max_value=3)
-            dpg.add_slider_float(label="slider float", max_value=1.0, format="ratio = %.3f", callback=lambda a,u,s:print(a,u,s))
-            dpg.add_slider_int(label="slider angle", min_value=-360, max_value=360, format="%d deg")
-            dpg.add_color_edit((102, 179, 0, 128), label="color edit 4")
-            dpg.add_color_edit(default_value=(.5, 1, .25, .1), label="color edit 4")
-            dpg.add_listbox(("Apple", "Banana", "Cherry", "Kiwi", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"), label="listbox", num_items=4)
-            dpg.add_color_button()
+            dpg.add_drag_float(label="B", 
+                    default_value=self._cc.param.b,
+                    min_value=self._cc.param.__class__.b.min_value,
+                    max_value=self._cc.param.__class__.b.max_value,
+                    format="%.02f", 
+                    speed=0.01,
+                    callback=lambda s,a,u:B(a))
+
+            @msg
+            def K(val):
+                self._cc.param.k = val
+
+            dpg.add_drag_float(label="K", 
+                    default_value=self._cc.param.k,
+                    min_value=self._cc.param.__class__.k.min_value,
+                    max_value=self._cc.param.__class__.k.max_value,
+                    format="%.02f", 
+                    speed=0.01,
+                    callback=lambda s,a,u:K(a))
+
+            @msg
+            def Zmin(val):
+                self._cc.param.zmin = val
+
+            dpg.add_drag_float(label="Zmin", 
+                    default_value=self._cc.param.zmin,
+                    min_value=self._cc.param.__class__.zmin.min_value,
+                    max_value=self._cc.param.__class__.zmax.max_value,
+                    format="%.02f", 
+                    speed=0.01,
+                    callback=lambda s,a,u:Zmin(a))
+
+            @msg
+            def Zmax(val):
+                self._cc.param.zmax = val
+
+            dpg.add_drag_float(label="Zmax", 
+                    default_value=self._cc.param.zmax,
+                    min_value=self._cc.param.__class__.zmax.min_value,
+                    max_value=self._cc.param.__class__.zmax.max_value,
+                    format="%.02f", 
+                    speed=0.01,
+                    callback=lambda s,a,u:Zmax(a))
+
+            #  dpg.add_combo(("AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIII", "JJJJ", "KKKK"), label="combo", default_value="AAAA")
+            #  dpg.add_input_int(label="input int")
+            #  dpg.add_input_float(label="input float")
+            #  dpg.add_input_float(label="input scientific", format="%e")
+            #  dpg.add_input_floatx(label="input floatx", default_value=[1,2,3,4])
+            #  dpg.add_drag_int(label="drag int")
+            #  dpg.add_drag_int(label="drag int 0..100", format="%d%%")
+            #  dpg.add_slider_int(label="slider int", max_value=3)
+            #  dpg.add_slider_float(label="slider float", max_value=1.0, format="ratio = %.3f", callback=lambda a,u,s:print(a,u,s))
+            #  dpg.add_slider_int(label="slider angle", min_value=-360, max_value=360, format="%d deg")
+            #  dpg.add_color_edit((102, 179, 0, 128), label="color edit 4")
+            #  dpg.add_color_edit(default_value=(.5, 1, .25, .1), label="color edit 4")
+            #  dpg.add_listbox(("Apple", "Banana", "Cherry", "Kiwi", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"), label="listbox", num_items=4)
+            #  dpg.add_color_button()
         return w
 
     def _log(self, sender, app_data, user_data):

@@ -7,7 +7,6 @@ sys.path.append('.')
 from typing import List
 import numpy as np
 from base.imgio import ImageBracket, open_image_as_bracket, Image
-# from . import taichi_backend
 import taichi_backend
 import imageio
 from base.paramtype import FloatParam

@@ -10,3 +10,6 @@ RuntimeError: [llvm_context.cpp:taichi::lang::TaichiLLVMContext::clone_runtime_m
 ```
 
 看来dearpygui的线程不是主线程，设计得改一下了。
+
+改变参数更新逻辑可以在taichi_backend里面做
+现在的问题是如何区分事件类型
