@@ -33,13 +33,14 @@ class CamerayHDR:
         self._param_set:HDRParamSet = HDRParamSet()
 
     def process(self,index):
-        if index >=0 and index < len(self._image_brackets):
-            pass
+        if index < 0 or index >= len(self._image_brackets):
+            return
         bracket = self._image_brackets[index]
         imgs = []
         shutter = []
         for img in bracket.images:
             imgs.append(img.data)
+            print(img)
             shutter.append(img.meta['shutter'])
         ldr_image_stack = np.array(imgs)
         shutters = np.array(shutter)
@@ -60,9 +61,9 @@ def cc_shutdown():
 if __name__ == '__main__':
     cc_init()
 
-    raw_low = SOURCE_ROOT_DIR+'/../data/sunset_low.CR2'
-    raw_nml = SOURCE_ROOT_DIR+'/../data/sunset_nml.CR2'
-    raw_high = SOURCE_ROOT_DIR+'/../data/sunset_high.CR2'
+    raw_low = SOURCE_ROOT_DIR + '/../data/sunset_low.CR2'
+    raw_nml = SOURCE_ROOT_DIR + '/../data/sunset_nml.CR2'
+    raw_high = SOURCE_ROOT_DIR + '/../data/sunset_high.CR2'
     filenames = [raw_low, raw_nml, raw_high]
     print(filenames)
     brackets = open_image_as_bracket(filenames)

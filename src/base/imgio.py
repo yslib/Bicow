@@ -170,11 +170,32 @@ def open_path_as_brackets(path: str, max_count:int=0)->List[ImageBracket]:
 
     return image_brackets
 
-
-if __name__ == '__main__':
+def test1():
     test_path = 'D:/photo/2021-6-25/100MSDCF'
     brackets = open_path_as_brackets(test_path, 10)
     for b in brackets:
         print('Bracket {} includes: '.format(b.name()))
         for img in b.images:
             print('{} with {} ev'.format(img.filename, img.meta['EV']))
+
+def test2():
+    import os
+    import sys
+    from PIL import Image
+    from PIL.ExifTags import TAGS
+    print(sys.argv)
+    image = sys.argv[1]
+    for (tag,value) in Image.open(image)._getexif().iteritems():
+            print('%s = %s' % (TAGS.get(tag), value))
+
+
+def test3():
+    import rawkit.metadata as rmt
+    import rawkit.raw as r
+    import sys
+    with r.Raw(sys.argv[1]) as raw:
+        print(raw.Metadata)
+
+if __name__ == '__main__':
+    test3()
+    pass

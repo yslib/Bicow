@@ -15,8 +15,13 @@ from base.msg_queue import get_msg_queue, msg
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
 
+
+class EventType:
+    pass
+
 def bind_param(item:int, param:HDRParamSet, name:str):
     prop = param.__class__.__dict__[name]
+
     @msg
     def value(val):
         setattr(param, name, val)
@@ -30,6 +35,47 @@ def bind_param(item:int, param:HDRParamSet, name:str):
             callback=lambda s,a,u:value(a))
 
 
+def bind_event(item:int, event_callback:Callable[[Any,Any,Any],None], type:str):
+    """
+    Binds an event handler for a give widget
+    event type listed as: 
+    clicked,
+    hover,
+    activated,
+    active,
+    deactivated,
+    deactivated_after_edit,
+    edited,
+    focus,
+    toggled,
+    visible
+    """
+
+    if type == 'clicked':
+        dpg.add_clicked_handler(item, 0, callback=event_callback)
+    elif type == 'hover':
+        dpg.add_hover_handler(item, callback=event_callback)
+    elif type == 'activated':
+        dpg.add_activated_handler(item, callback=event_callback)
+    elif type == 'active':
+        dpg.add_active_handler(item, callback=event_callback)
+    elif type == 'deactivated_after_edit':
+        dpg.add_deactivated_after_edit_handler(item, callback=event_callback)
+    elif type == 'deactivated':
+        dpg.add_deactivated_handler(item, callback=event_callback)
+    elif type == 'edited':
+        dpg.add_edited_handler(item, callback=event_callback)
+    elif type == 'focus':
+        dpg.add_focus_handler(item, callback=event_callback)
+    elif type == 'toggled':
+        dpg.add_toggled_open_handler(item, callback=event_callback)
+    elif type == 'visible':
+        dpg.add_visible_handler(item, callback=event_callback)
+
+
+def bind_param_and_event(item:int, param, name, update_callback, type):
+    bind_param(item, param,name)
+    bind_event(item,update_callback, type)
 
 msgqueue = get_msg_queue()
 class App:
@@ -112,16 +158,18 @@ class App:
             dpg.add_separator()
             dpg.add_button(parent=modal_id,label="OK", width=75, callback=lambda: dpg.delete_item(modal_id))
 
+
+
     def _gui_add_parameter_panel(self, parent)->int:
         with dpg.child(autosize_x=True, parent=parent) as w:
             item = dpg.add_drag_float(label="K")
-            bind_param(item, self._cc.param, 'k')
+            bind_param_and_event(item, self._cc.param, 'k', self._update_process, 'deactivated')
             item = dpg.add_drag_float(label="B")
-            bind_param(item, self._cc.param, 'b')
+            bind_param_and_event(item, self._cc.param, 'b', self._update_process, 'deactivated')
             item = dpg.add_drag_float(label="Zmin")
-            bind_param(item, self._cc.param, 'zmin')
+            bind_param_and_event(item, self._cc.param, 'zmin', self._update_process, 'deactivated')
             item = dpg.add_drag_float(label="Zmax")
-            bind_param(item, self._cc.param, 'zmax')
+            bind_param_and_event(item, self._cc.param, 'zmax', self._update_process, 'deactivated')
 
             #  dpg.add_combo(("AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIII", "JJJJ", "KKKK"), label="combo", default_value="AAAA")
             #  dpg.add_input_int(label="input int")
@@ -169,6 +217,12 @@ class App:
             self._cc = CamerayHDR(braket_list)
             self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
         e()
+
+    def _update_process(self, s,a,u):
+        @msg
+        def proc():
+            self._cc.process(0)
+        proc()
 
     def _gui_add_bracket_preview(self):
         pass
