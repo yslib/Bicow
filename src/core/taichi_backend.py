@@ -253,11 +253,21 @@ def initialize_ti_varibles(ldr_image_stack, shutters):
 def pipeline_init():
     ti.init(arch=ti.gpu, default_fp = ti.f64, device_memory_fraction=0.3)
 
+
+
+global n
+
+def pipeline_refine():
+    hdr_comp(n)
+    return ti_canvas
+
+
 def pipeline(shutters:List[int], ldr_image_stack, preview_window:bool):
 
     shape = ldr_image_stack.shape  # (n, width, height, channel)
     create_ti_variables(shape)
 
+    global n
     n = shape[0]
     channel = shape[3]
 

@@ -1,5 +1,7 @@
 import sys
 import os
+
+import taichi
 SOURCE_ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 PROJECT_ROOT_DIR = os.path.dirname(SOURCE_ROOT_DIR)
 sys.path.append(SOURCE_ROOT_DIR)
@@ -31,6 +33,7 @@ class CamerayHDR:
         self._image_brackets = image_bracket_list
         taichi_backend.pipeline_param_init()
         self._param_set:HDRParamSet = HDRParamSet()
+        self.process(0)
 
     def process(self,index):
         if index < 0 or index >= len(self._image_brackets):
@@ -46,6 +49,9 @@ class CamerayHDR:
         shutters = np.array(shutter)
         output = taichi_backend.pipeline(shutters, ldr_image_stack, preview_window=False)
         return Image('', output.to_numpy())
+
+    def refine(self):
+        taichi_backend.pipeline_refine()
 
     @property
     def param(self):

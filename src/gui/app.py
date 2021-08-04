@@ -11,66 +11,10 @@ from core.cameray import CamerayHDR,HDRParamSet, cc_init, cc_shutdown
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
 from typing import Callable, Dict, Any, List, Tuple
 from base.msg_queue import get_msg_queue, msg
+from gui.utils import bind_event, bind_param
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
-
-
-class EventType:
-    pass
-
-def bind_param(item:int, param:HDRParamSet, name:str):
-    prop = param.__class__.__dict__[name]
-
-    @msg
-    def value(val):
-        setattr(param, name, val)
-
-    dpg.configure_item(item,
-            default_value=getattr(param, name, 0),
-            min_value=prop.min_value,
-            max_value=prop.max_value,
-            format="%.02f",
-            speed=0.01,
-            callback=lambda s,a,u:value(a))
-
-
-def bind_event(item:int, event_callback:Callable[[Any,Any,Any],None], type:str):
-    """
-    Binds an event handler for a give widget
-    event type listed as: 
-    clicked,
-    hover,
-    activated,
-    active,
-    deactivated,
-    deactivated_after_edit,
-    edited,
-    focus,
-    toggled,
-    visible
-    """
-
-    if type == 'clicked':
-        dpg.add_clicked_handler(item, 0, callback=event_callback)
-    elif type == 'hover':
-        dpg.add_hover_handler(item, callback=event_callback)
-    elif type == 'activated':
-        dpg.add_activated_handler(item, callback=event_callback)
-    elif type == 'active':
-        dpg.add_active_handler(item, callback=event_callback)
-    elif type == 'deactivated_after_edit':
-        dpg.add_deactivated_after_edit_handler(item, callback=event_callback)
-    elif type == 'deactivated':
-        dpg.add_deactivated_handler(item, callback=event_callback)
-    elif type == 'edited':
-        dpg.add_edited_handler(item, callback=event_callback)
-    elif type == 'focus':
-        dpg.add_focus_handler(item, callback=event_callback)
-    elif type == 'toggled':
-        dpg.add_toggled_open_handler(item, callback=event_callback)
-    elif type == 'visible':
-        dpg.add_visible_handler(item, callback=event_callback)
 
 
 def bind_param_and_event(item:int, param, name, update_callback, type):
@@ -221,14 +165,18 @@ class App:
     def _update_process(self, s,a,u):
         @msg
         def proc():
-            self._cc.process(0)
+            output = self._cc.refine()
         proc()
 
     def _gui_add_bracket_preview(self):
         pass
 
     def _gui_add_result_image(self):
+        image_view_id = dpg.add_image(self)
         pass
+
+    def _update_result_image(self, item_id, rgba, width, height):
+        dpg.add_dynamic_texture(width, height, rgba, id=self._timelapse_result_image_id)
 
     def _setup_timelapse_tab(self):
         with dpg.group(horizontal=True):
