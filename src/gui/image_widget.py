@@ -26,8 +26,7 @@ class ImageWidget(Widget):
         if not self.valid() or self._width != width or self._height != height:
             self._release_texture()
             self._texture_id = dpg.add_dynamic_texture(width, height,norm_rbga, parent=self._texture_container)
-            print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-            dpg.add_image(self._texture_id,parent=self.widget())
+            dpg.add_image(self._texture_id,parent=self.widget(),width=600,height=int(height*1.0/width * 600))
             self._width = width
             self._height = height
             return

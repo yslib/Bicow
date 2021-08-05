@@ -248,7 +248,6 @@ def initialize_ti_varibles(ldr_image_stack, shutters):
     ti_shutters.from_numpy(shutters)
 
 
-
 def pipeline_init():
     ti.init(arch=ti.gpu, default_fp = ti.f64, device_memory_fraction=0.3)
 
@@ -258,8 +257,8 @@ global n
 
 def pipeline_refine():
     hdr_comp(n)
-    convert_to_display()
-    return ti_canvas
+    # convert_to_display()
+    return ti_hdr_image
 
 
 def pipeline(shutters:List[int], ldr_image_stack, preview_window:bool):

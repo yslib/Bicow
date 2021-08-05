@@ -13,3 +13,12 @@ RuntimeError: [llvm_context.cpp:taichi::lang::TaichiLLVMContext::clone_runtime_m
 
 改变参数更新逻辑可以在taichi_backend里面做
 现在的问题是如何区分事件类型
+
+
+2021-08-05
+dearpygui 的file dialog 有很多Bug。 现在换gui框架已经不太现实了。凑合用吧，之后把文件对话框
+可以改成传统的GUI。
+
+而且绘制大图片效率很低，得给管线加上输出缩略图的功能。
+
+ImageWidget 需要继续完善
