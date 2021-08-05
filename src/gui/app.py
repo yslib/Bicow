@@ -12,6 +12,7 @@ from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_bracket
 from typing import Callable, Dict, Any, List, Tuple
 from base.msg_queue import get_msg_queue, msg
 from gui.utils import bind_event, bind_param
+from gui.image_widget import ImageWidget
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
@@ -50,24 +51,12 @@ class App:
         self._gui_id_image_list_box:int = None
         self._gui_id_image_bracket_list_box:int = None
         self._gui_id_parameter_panel_parent:int = None
-        self._timelapse_result_image_id:int = None
-        self._timelapse_image_image_series_id:List[int] = []
+        self._result_image_widget:ImageWidget = None
 
     def _setup_cameray(self):
         cc_init()
         self._cc:CamerayHDR = None
 
-    def _init_timelaplse_image(self,count:int, size:Tuple[int,int]):
-        """
-        delete old image init new image
-        """
-        dpg.delete_item(self._timelapse_result_image_id)
-        for e in self._timelapse_image_image_series_id:
-            dpg.delete_item(e)
-        self._timelapse_image_image_series_id = []
-        self._timelapse_result_image_id = dpg.generate_uuid()
-        for i in range(count):
-            self._timelapse_image_image_series_id.append(dpg.generate_uuid())
 
     def _set_result_image(self, image_id, data:List[float], size:Tuple[int,int]):
         """
@@ -83,6 +72,7 @@ class App:
         """
         with dpg.child(autosize_x=True, height=200,horizontal_scrollbar=True, parent=parent): # image series preview
             with dpg.group(horizontal=True) as image_container_id:
+                dpg.add_text(label='testttttttttttttt',parent=image_container_id)
                 pass
         return image_container_id
 
@@ -165,7 +155,9 @@ class App:
     def _update_process(self, s,a,u):
         @msg
         def proc():
-            output = self._cc.refine()
+            output = self._cc.refine().to_numpy()
+            self._result_image_widget.from_numpy(output)
+            print(output.shape)
         proc()
 
     def _gui_add_bracket_preview(self):
@@ -195,9 +187,9 @@ class App:
             with dpg.child() as a:
                 self._gui_id_img_preview = self._gui_add_image_preview(a)
                 with dpg.group(horizontal=True):
-                    with dpg.child(width=800):
+                    with dpg.child(width=800) as res_id:
                         # result image
-                        pass
+                        self._result_image_widget = ImageWidget(res_id)
                     with dpg.child(width=200,autosize_x=True) as b:
                         self._gui_id_parameter_panel_parent = b
 

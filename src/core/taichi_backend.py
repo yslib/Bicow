@@ -178,7 +178,6 @@ def hdr_comp(n: ti.template()):
     # tone mapping
     gm = geometric_mean(ti_hdr_image)
     mi = max_intensity(ti_hdr_image)
-    print(mi)
     mi = ti_K[None]/gm * mi
 
     for i, j in ti_hdr_image:
@@ -259,6 +258,7 @@ global n
 
 def pipeline_refine():
     hdr_comp(n)
+    convert_to_display()
     return ti_canvas
 
 

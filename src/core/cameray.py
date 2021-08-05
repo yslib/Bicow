@@ -51,7 +51,7 @@ class CamerayHDR:
         return Image('', output.to_numpy())
 
     def refine(self):
-        taichi_backend.pipeline_refine()
+        return taichi_backend.pipeline_refine()
 
     @property
     def param(self):
