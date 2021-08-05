@@ -1,8 +1,5 @@
-This is my raw image post processing pipeline
-I try to implement some basic computational photography algorithm in this repository so far
-
-opencv, rawpy, dcraw and PIL are required to run the demo
-
-
+# Bicow
 
 ----
+
+**Bicow**, an abbreviation of  the **B**est **I**mage **C**ompositor for **O**ld **W**izard. The chinese word, "老(Old)法师(Wizard)", could be simply translated into English as is, which dubs a kind of aged veteran who have an (maybe a little) expertise in photography but their taste maybe out of date and the name stuck. Here, we just take the name for joking without discrimination.
