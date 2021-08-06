@@ -3,16 +3,19 @@ import os
 from typing import List
 import numpy as np
 import imageio
+
 SOURCE_ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 from base.imgio import ImageBracket, open_image_as_bracket, Image
 from base.paramtype import FloatParam
-import bicow.backend.taichi.hdr_pipeline as ti_hdr
+
+from bicow.backend.taichi.taichi_setup import taichi_init
+import bicow.backend.taichi.taichi_hdr_pipeline as ti_hdr
 
 def bicow_init():
-    ti_hdr.pipeline_init()
+    taichi_init()
 
 def bicow_shutdown():
-    print('cc_shutdown')
+    print('bicow_shutdown')
 
 class HDRParamSet:
     """
@@ -32,7 +35,7 @@ class HDRParamSet:
 class BicowHDR:
     def __init__(self, image_bracket_list:List[ImageBracket]):
         self._image_brackets = image_bracket_list
-        ti_hdr.pipeline_param_init()
+        ti_hdr.init_param()
         self._param_set:HDRParamSet = HDRParamSet()
         self.process(0)
 
@@ -47,15 +50,18 @@ class BicowHDR:
             shutter.append(img.meta['shutter'])
         ldr_image_stack = np.array(imgs)
         shutters = np.array(shutter)
-        ti_hdr.pipeline_set_data(shutters, ldr_image_stack)
-        return ti_hdr.pipeline_refine()
+        ti_hdr.set_data(shutters, ldr_image_stack)
+        return ti_hdr.refine()
 
     def refine(self):
-        return ti_hdr.pipeline_refine()
+        return ti_hdr.refine()
 
     @property
     def param(self):
         return self._param_set
+
+    def __del__(self):
+        ti_hdr.free()
 
 
 if __name__ == '__main__':

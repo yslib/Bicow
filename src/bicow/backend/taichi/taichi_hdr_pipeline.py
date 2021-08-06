@@ -27,6 +27,33 @@ ti_Zmax = None
 
 CHANNEL_MAX_NUM = 65535.0
 
+# free all taichi resouces here
+def free():
+    """
+    Destroy all taichi resources to free memory
+    """
+    global ti_window_size, ti_sub_window_size, ti_sub_window_layout, ti_canvas
+    global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
+    global ti_K, ti_B, ti_Zmin, ti_Zmax
+    global _image_stack_shape
+
+    _image_stack_shape = None
+
+    ti_window_size = None
+    ti_sub_window_size = None
+    ti_sub_window_layout = None
+    ti_canvas = None
+
+    ti_hdr_image = None
+    ti_ldr_image_stack = None
+    ti_weight_map_stack = None
+    ti_shutters = None
+    ti_canvas = None
+    ti_K = None
+    ti_B = None
+    ti_Zmin = None
+    ti_Zmax = None
+
 
 def zmin_cb(val):
     global ti_Zmin
@@ -50,7 +77,7 @@ def B_cb(val):
 
 #########################################
 
-def pipeline_param_init():
+def init_param():
     global ti_K, ti_B, ti_Zmin, ti_Zmax
     ti_K = ti.field(ti.f32, shape=())
     ti_B = ti.field(ti.f32, shape=())
@@ -240,7 +267,7 @@ def convert_to_display():
     sub_windows += 3
 
 
-def alloc_ti_var(shape):
+def _init(shape):
     global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
     global ti_K, ti_B, ti_Zmin, ti_Zmax
 
@@ -254,33 +281,33 @@ def alloc_ti_var(shape):
     ti_shutters = ti.field(ti.f32, shape=n)
 
 
-def init_ti_var(ldr_image_stack, shutters):
+def _set_data(ldr_image_stack, shutters):
     global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
     global ti_K, ti_B, ti_Zmin, ti_Zmax
 
     ti_ldr_image_stack.from_numpy(ldr_image_stack)
     ti_shutters.from_numpy(shutters)
 
-
-def pipeline_init():
-    ti.init(arch=ti.cpu, device_memory_fraction=0.5)
-
-def pipeline_refine():
+def refine():
     n = ti_ldr_image_stack.shape[0]
     hdr_comp(n)
     return ti_hdr_image
 
-def pipeline_set_data(shutters:List[float], ldr_image_stack:np.ndarray):
+def set_data(shutters:List[float], ldr_image_stack:np.ndarray):
     global _image_stack_shape
-    if _image_stack_shape != ldr_image_stack.shape:
+    if _image_stack_shape is None or _image_stack_shape != ldr_image_stack.shape:
         _image_stack_shape = ldr_image_stack.shape  # (n, width, height, channel)
-        alloc_ti_var(_image_stack_shape)
-    init_ti_var(ldr_image_stack, shutters)
+        _init(_image_stack_shape)
+    _set_data(ldr_image_stack, shutters)
 
+
+"""
+Deprecated
+"""
 def pipeline(shutters:List[int], ldr_image_stack:np.ndarray, preview_window:bool):
 
     shape = ldr_image_stack.shape  # (n, width, height, channel)
-    alloc_ti_var(shape)
+    _init(shape)
 
     n = shape[0]
     channel = shape[3]
@@ -300,7 +327,7 @@ def pipeline(shutters:List[int], ldr_image_stack:np.ndarray, preview_window:bool
         ti_window_size = ti.Vector([*window_size])
         ti_sub_window_layout = ti.Vector([*sub_window_layout])
         ti_sub_window_size = ti.Vector([*sub_window_size])
-        init_ti_var(ldr_image_stack, shutters)
+        _set_data(ldr_image_stack, shutters)
 
         # GUI widget varibles
 
@@ -322,7 +349,7 @@ def pipeline(shutters:List[int], ldr_image_stack:np.ndarray, preview_window:bool
         ti_window_size = ti.Vector([*window_size])
         ti_sub_window_layout = ti.Vector([*sub_window_layout])
         ti_sub_window_size = ti.Vector([*sub_window_size])
-        init_ti_var(ldr_image_stack, shutters)
+        _set_data(ldr_image_stack, shutters)
         hdr_comp(n)
         convert_to_display()
 

@@ -14,7 +14,6 @@ CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
-
 def bind_param_and_event(item:int, param, name, update_callback, type):
     bind_param(item, param,name)
     bind_event(item,update_callback, type)
@@ -24,7 +23,7 @@ class App:
     def __init__(self) -> None:
         self._setup_init()
         self._setup_uuid()
-        self._setup_fonts()
+        self._setup_style()
         self._setup_window()
         self._setup_viewport()
         self._setup_bicow()
@@ -34,7 +33,7 @@ class App:
         self._app_config.write(open(CMR_CONFIG_FILE_PATH,'a'))
         print('_on_app_close')
 
-    def _setup_fonts(self):
+    def _setup_style(self):
         with dpg.font_registry():
             dpg.add_font(CMR_FONT_FILE_PATH, 18, default_font=True)
 
