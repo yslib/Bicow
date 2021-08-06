@@ -1,21 +1,18 @@
 import sys
-
-from numpy.lib.function_base import select
-sys.path.append('..')
-from os import waitpid
-import sys
-sys.path.append('..')
-import configparser
-import dearpygui.dearpygui as dpg
-from core.cameray import CamerayHDR,HDRParamSet, cc_init, cc_shutdown
-from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
+import os
 from typing import Callable, Dict, Any, List, Tuple
+import configparser
+sys.path.append('..')
+import dearpygui.dearpygui as dpg
+import bicow.bicow as bc
+from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
 from base.msg_queue import get_msg_queue, msg
 from gui.utils import bind_event, bind_param
 from gui.image_widget import ImageWidget
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 
 def bind_param_and_event(item:int, param, name, update_callback, type):
@@ -30,7 +27,7 @@ class App:
         self._setup_fonts()
         self._setup_window()
         self._setup_viewport()
-        self._setup_cameray()
+        self._setup_bicow()
 
     def _on_app_close(self, s,a,u):
         dpg.delete_item(s)
@@ -53,9 +50,9 @@ class App:
         self._gui_id_parameter_panel_parent:int = None
         self._result_image_widget:ImageWidget = None
 
-    def _setup_cameray(self):
-        cc_init()
-        self._cc:CamerayHDR = None
+    def _setup_bicow(self):
+        bc.bicow_init()
+        self._bicow_hdr:bc.BicowHDR = None
 
 
     def _set_result_image(self, image_id, data:List[float], size:Tuple[int,int]):
@@ -97,13 +94,13 @@ class App:
     def _gui_add_parameter_panel(self, parent)->int:
         with dpg.child(autosize_x=True, parent=parent) as w:
             item = dpg.add_drag_float(label="K")
-            bind_param_and_event(item, self._cc.param, 'k', self._update_process, 'deactivated')
+            bind_param_and_event(item, self._bicow_hdr.param, 'k', self._update_process, 'deactivated')
             item = dpg.add_drag_float(label="B")
-            bind_param_and_event(item, self._cc.param, 'b', self._update_process, 'deactivated')
+            bind_param_and_event(item, self._bicow_hdr.param, 'b', self._update_process, 'deactivated')
             item = dpg.add_drag_float(label="Zmin")
-            bind_param_and_event(item, self._cc.param, 'zmin', self._update_process, 'deactivated')
+            bind_param_and_event(item, self._bicow_hdr.param, 'zmin', self._update_process, 'deactivated')
             item = dpg.add_drag_float(label="Zmax")
-            bind_param_and_event(item, self._cc.param, 'zmax', self._update_process, 'deactivated')
+            bind_param_and_event(item, self._bicow_hdr.param, 'zmax', self._update_process, 'deactivated')
 
             #  dpg.add_combo(("AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIII", "JJJJ", "KKKK"), label="combo", default_value="AAAA")
             #  dpg.add_input_int(label="input int")
@@ -148,14 +145,14 @@ class App:
     def _open_hdr_pipeline(self, braket_list:List[ImageBracket]):
         @msg
         def e():
-            self._cc = CamerayHDR(braket_list)
+            self._bicow_hdr = bc.BicowHDR(braket_list)
             self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
         e()
 
     def _update_process(self, s,a,u):
         @msg
         def proc():
-            output = self._cc.refine().to_numpy()
+            output = self._bicow_hdr.refine().to_numpy()
             self._result_image_widget.from_numpy(output)
             print(output.shape)
         proc()
@@ -202,9 +199,14 @@ class App:
         dpg.set_item_width(self._gui_id_app, a[2])
 
     def _setup_viewport(self):
-        dpg.set_viewport_resize_callback(lambda a, b:self._gui_viewport_resize_event(a, b, self._gui_id_app))
-        dpg.setup_viewport()
-        dpg.set_viewport_title(title='The Best Image Compositor for Old Wizard in Binjiang District')
+        if not dpg.is_viewport_created():
+            icon = PROJECT_DIR+'/icon.png'
+            print(icon)
+            vp = dpg.create_viewport(small_icon=icon,title='Bicow', large_icon=icon)
+            dpg.set_viewport_resize_callback(lambda a, b:self._gui_viewport_resize_event(a, b, self._gui_id_app))
+            dpg.setup_dearpygui(viewport=vp)
+            dpg.show_viewport(vp)
+            dpg.set_viewport_title(title='Bicow')
 
     def _setup_window(self):
 
@@ -237,10 +239,6 @@ class App:
                     pass
 
     def show(self):
-        if not dpg.is_viewport_created():
-            vp = dpg.create_viewport()
-            dpg.setup_dearpygui(viewport=vp)
-            dpg.show_viewport(vp)
         while(dpg.is_dearpygui_running()):
             while not msgqueue.empty():
                 event = msgqueue.get()

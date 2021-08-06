@@ -1,25 +1,32 @@
 import taichi as ti
-from typing import List
+from typing import List, Tuple
+import numpy as np
 
 # declare ti param
 
 ti_window_size = None
 ti_sub_window_size = None
 ti_sub_window_layout = None
+ti_canvas = None                # ouput image for display(include some debug images)
 
-ti_ldr_image_stack = None
-ti_shutters = None
-ti_weight_map_stack = None
-ti_canvas = None
-ti_hdr_image = None
+ti_ldr_image_stack = None       # input bracket, with a shape of (n, image_width, image_height, channel)
+ti_shutters = None              # array of shutter speed of bracket ti_shutters.shape[0] = n
+ti_weight_map_stack = None      # weight map for each image of bracket for debug, with a shape of (n, image_width, image_height, channel)
+ti_hdr_image = None             # output hdr image
 
+
+_image_stack_shape:Tuple[int,int,int,int] = ()         #
+
+# hdr composition parameters
 ti_K = None
 ti_B = None
 
 ti_Zmin = None
 ti_Zmax = None
 
+
 CHANNEL_MAX_NUM = 65535.0
+
 
 def zmin_cb(val):
     global ti_Zmin
@@ -41,8 +48,9 @@ def B_cb(val):
     ti_B[None] = val
     print('value update in taichi::B_cb()')
 
+#########################################
+
 def pipeline_param_init():
-    print('taichi_backend.pipeline_param_init')
     global ti_K, ti_B, ti_Zmin, ti_Zmax
     ti_K = ti.field(ti.f32, shape=())
     ti_B = ti.field(ti.f32, shape=())
@@ -95,7 +103,6 @@ def sum_of_weight(n, i, j):
     return sum
 
 
-
 @ti.func
 def sum_of_weighted_radiance_log(n, i, j):
     sum = ti.Vector([0.0, 0.0, 0.0])
@@ -112,7 +119,6 @@ def sum_of_weighted_radiance_linear(n, i, j):
         val = ti_ldr_image_stack[ind, i, j] + 1
         sum += w(val) * (val/ti_shutters[ind])
     return sum
-
 
 @ti.func
 def log_hdr(n, output):
@@ -171,6 +177,9 @@ def max_val(image):
 
 @ti.kernel
 def hdr_comp(n: ti.template()):
+    """
+    n: number of images in a braket
+    """
     # composition
     # log_hdr(n, ti_output)
     linear_hdr(n, ti_hdr_image)
@@ -186,7 +195,6 @@ def hdr_comp(n: ti.template()):
         # ti_output[i, j] = scaled/(1.0+scaled) * 255.0
 
     # print(gm,mi)
-
     # debug, generate weight map
     for k, i, j in ti_weight_map_stack:
         ti_weight_map_stack[k, i, j] = w(ti_ldr_image_stack[k, i, j])
@@ -194,6 +202,14 @@ def hdr_comp(n: ti.template()):
 
 @ti.kernel
 def convert_to_display():
+    """
+    Input ti variables:
+    ti_hdr_image
+    ti_sub_window_size
+
+    Ouput ti variables:
+    ti_canvas
+    """
     scale_i = ti_hdr_image.shape[1] * 1.0 / ti_sub_window_size[0]
     scale_j = ti_hdr_image.shape[0] * 1.0 / ti_sub_window_size[1]
     original_height = ti_hdr_image.shape[0]
@@ -224,7 +240,7 @@ def convert_to_display():
     sub_windows += 3
 
 
-def create_ti_variables(shape):
+def alloc_ti_var(shape):
     global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
     global ti_K, ti_B, ti_Zmin, ti_Zmax
 
@@ -233,14 +249,12 @@ def create_ti_variables(shape):
     size = (shape[1], shape[2])  # image size
 
     ti_hdr_image = ti.Vector.field(channel, ti.i32, shape=(size[0], size[1]))
-    ti_weight_map_stack = ti.Vector.field(
-        channel, ti.f32, shape=(n, size[0], size[1]))
-    ti_ldr_image_stack = ti.Vector.field(
-        channel, ti.i32, shape=(n, size[0], size[1]))
+    ti_weight_map_stack = ti.Vector.field(channel, ti.f32, shape=(n, size[0], size[1]))
+    ti_ldr_image_stack = ti.Vector.field(channel, ti.i32, shape=(n, size[0], size[1]))
     ti_shutters = ti.field(ti.f32, shape=n)
 
 
-def initialize_ti_varibles(ldr_image_stack, shutters):
+def init_ti_var(ldr_image_stack, shutters):
     global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack, ti_shutters, ti_canvas
     global ti_K, ti_B, ti_Zmin, ti_Zmax
 
@@ -249,24 +263,25 @@ def initialize_ti_varibles(ldr_image_stack, shutters):
 
 
 def pipeline_init():
-    ti.init(arch=ti.gpu, default_fp = ti.f64, device_memory_fraction=0.3)
-
-
-
-global n
+    ti.init(arch=ti.cpu, device_memory_fraction=0.5)
 
 def pipeline_refine():
+    n = ti_ldr_image_stack.shape[0]
     hdr_comp(n)
-    # convert_to_display()
     return ti_hdr_image
 
+def pipeline_set_data(shutters:List[float], ldr_image_stack:np.ndarray):
+    global _image_stack_shape
+    if _image_stack_shape != ldr_image_stack.shape:
+        _image_stack_shape = ldr_image_stack.shape  # (n, width, height, channel)
+        alloc_ti_var(_image_stack_shape)
+    init_ti_var(ldr_image_stack, shutters)
 
-def pipeline(shutters:List[int], ldr_image_stack, preview_window:bool):
+def pipeline(shutters:List[int], ldr_image_stack:np.ndarray, preview_window:bool):
 
     shape = ldr_image_stack.shape  # (n, width, height, channel)
-    create_ti_variables(shape)
+    alloc_ti_var(shape)
 
-    global n
     n = shape[0]
     channel = shape[3]
 
@@ -285,8 +300,7 @@ def pipeline(shutters:List[int], ldr_image_stack, preview_window:bool):
         ti_window_size = ti.Vector([*window_size])
         ti_sub_window_layout = ti.Vector([*sub_window_layout])
         ti_sub_window_size = ti.Vector([*sub_window_size])
-
-        initialize_ti_varibles(ldr_image_stack, shutters)
+        init_ti_var(ldr_image_stack, shutters)
 
         # GUI widget varibles
 
@@ -308,7 +322,7 @@ def pipeline(shutters:List[int], ldr_image_stack, preview_window:bool):
         ti_window_size = ti.Vector([*window_size])
         ti_sub_window_layout = ti.Vector([*sub_window_layout])
         ti_sub_window_size = ti.Vector([*sub_window_size])
-        initialize_ti_varibles(ldr_image_stack, shutters)
+        init_ti_var(ldr_image_stack, shutters)
         hdr_comp(n)
         convert_to_display()
 
