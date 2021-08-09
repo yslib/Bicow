@@ -9,6 +9,7 @@ from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_bracket
 from base.msg_queue import get_msg_queue, msg
 from gui.utils import bind_event, bind_param
 from gui.image_widget import ImageWidget
+from gui.list_widget import ImageListWidget
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
@@ -48,6 +49,7 @@ class App:
         self._gui_id_image_bracket_list_box:int = None
         self._gui_id_parameter_panel_parent:int = None
         self._result_image_widget:ImageWidget = None
+        self._image_list_widget:ImageListWidget = None
 
     def _setup_bicow(self):
         bc.bicow_init()
@@ -151,7 +153,8 @@ class App:
     def _update_process(self, s,a,u):
         @msg
         def proc():
-            output = self._bicow_hdr.refine().to_numpy()
+            self._bicow_hdr.refine()
+            output = self._bicow_hdr.get_processed_data().to_numpy()
             self._result_image_widget.from_numpy(output)
             print(output.shape)
         proc()
@@ -174,12 +177,11 @@ class App:
                     dpg.add_text('test')
                 dpg.add_same_line()
                 dpg.add_button(label='Export')
-                with dpg.child(height=250):
-                    dpg.add_text('Brackets')
-                    self._gui_id_image_bracket_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200,callback=self._on_bracket_listbox_callback)
-                with dpg.child():
-                    dpg.add_text('Image')
-                    self._gui_id_image_list_box = dpg.add_listbox(label='',items=[],num_items=10,width=200, callback=self._on_bracket_listbox_callback)
+                with dpg.child(height=250,no_scrollbar=True):
+                    self._gui_id_image_bracket_list_box = dpg.add_listbox(label='',items=[],num_items=0,width=0,callback=self._on_bracket_listbox_callback)
+                with dpg.child(no_scrollbar=True) as cid:
+                    self._gui_id_image_list_box = dpg.add_listbox(label='',items=[],num_items=0,width=0, callback=self._on_bracket_listbox_callback)
+                    self._image_list_widget = ImageListWidget(label='', cid)
             with dpg.child() as a:
                 self._gui_id_img_preview = self._gui_add_image_preview(a)
                 with dpg.group(horizontal=True):

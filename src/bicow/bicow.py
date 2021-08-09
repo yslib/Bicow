@@ -1,6 +1,6 @@
 import sys
 import os
-from typing import List
+from typing import List, Tuple
 import numpy as np
 import imageio
 
@@ -33,16 +33,17 @@ class HDRParamSet:
         self.zmax = 0.95
 
 class BicowHDR:
-    def __init__(self, image_bracket_list:List[ImageBracket]):
-        self._image_brackets = image_bracket_list
+    def __init__(self, size:Tuple[int, int]):
         ti_hdr.init_param()
         self._param_set:HDRParamSet = HDRParamSet()
-        self.process(0)
+        self._data:np.ndarray = None
+        self._size = size
 
-    def process(self,index):
-        if index < 0 or index >= len(self._image_brackets):
-            return
-        bracket = self._image_brackets[index]
+    def __del__(self):
+        ti_hdr.free()
+
+    def set_data(self, image_bracket:ImageBracket):
+        bracket = image_bracket
         imgs = []
         shutter = []
         for img in bracket.images:
@@ -51,17 +52,20 @@ class BicowHDR:
         ldr_image_stack = np.array(imgs)
         shutters = np.array(shutter)
         ti_hdr.set_data(shutters, ldr_image_stack)
-        return ti_hdr.refine()
 
     def refine(self):
-        return ti_hdr.refine()
+        self._data = ti_hdr.refine()
+
+    def get_processed_data(self):
+        """
+        Returns the processed data
+        """
+        return self._data
 
     @property
     def param(self):
         return self._param_set
 
-    def __del__(self):
-        ti_hdr.free()
 
 
 if __name__ == '__main__':
@@ -74,7 +78,7 @@ if __name__ == '__main__':
     print(filenames)
     brackets = open_image_as_bracket(filenames)
     cameray = BicowHDR(brackets)
-    output = cameray.process(0).data
+    output = cameray.set_data(0).data
     name = 'output.jpeg'
     print('save image: {}'.format(name))
     imageio.imsave(name,output)
