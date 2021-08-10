@@ -11,6 +11,8 @@ from base.paramtype import FloatParam
 from bicow.backend.taichi.taichi_setup import taichi_init
 import bicow.backend.taichi.taichi_hdr_pipeline as ti_hdr
 
+from PIL import Image
+
 def bicow_init():
     taichi_init()
 
@@ -33,25 +35,33 @@ class HDRParamSet:
         self.zmax = 0.95
 
 class BicowHDR:
-    def __init__(self, size:Tuple[int, int]):
+    def __init__(self, scale_size:Tuple[int, int]=None):
         ti_hdr.init_param()
         self._param_set:HDRParamSet = HDRParamSet()
         self._data:np.ndarray = None
-        self._size = size
+        self._size = scale_size
+        self._original:np.ndarray = None
+        self._bracket:ImageBracket = None
 
     def __del__(self):
         ti_hdr.free()
 
     def set_data(self, image_bracket:ImageBracket):
-        bracket = image_bracket
+        self._bracket = image_bracket
         imgs = []
         shutter = []
-        for img in bracket.images:
+        for img in self._bracket.images:
             imgs.append(img.data)
             shutter.append(img.meta['shutter'])
         ldr_image_stack = np.array(imgs)
         shutters = np.array(shutter)
         ti_hdr.set_data(shutters, ldr_image_stack)
+
+    def resize(self, size:Tuple[int, int])->None:
+        """
+        Resizes image to the given size
+        """
+        ti_hdr.resize(size)
 
     def refine(self):
         self._data = ti_hdr.refine()

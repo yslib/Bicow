@@ -10,6 +10,7 @@ ti_sub_window_layout = None
 ti_canvas = None                # ouput image for display(include some debug images)
 
 ti_ldr_image_stack = None       # input bracket, with a shape of (n, image_width, image_height, channel)
+ti_swap_ldr_image_stack = None  # used for resizing
 ti_shutters = None              # array of shutter speed of bracket ti_shutters.shape[0] = n
 ti_weight_map_stack = None      # weight map for each image of bracket for debug, with a shape of (n, image_width, image_height, channel)
 ti_hdr_image = None             # output hdr image
@@ -228,6 +229,24 @@ def hdr_comp(n: ti.template()):
 
 
 @ti.kernel
+def _resize(width:ti.template(), height:ti.template()):
+    """
+    resize ti_ldr_image_stack to give size
+    """
+    global ti_ldr_image_stack, ti_swap_ldr_image_stack
+    shape = ti_ldr_image_stack.shape
+    old_size = (shape[1], shape[2])
+    scale_i = old_size[1] * 1.0 / width
+    scale_j = old_size[0] * 1.0 / height
+
+    for n, i, j in ti_swap_ldr_image_stack:
+        ti_swap_ldr_image_stack[n, i, j] = ti_ldr_image_stack[n,scale_i * i,scale_j * j]
+
+    ti_ldr_image_stack = ti_swap_ldr_image_stack
+    ti_swap_ldr_image_stack = None
+
+
+@ti.kernel
 def convert_to_display():
     """
     Input ti variables:
@@ -292,6 +311,19 @@ def refine():
     n = ti_ldr_image_stack.shape[0]
     hdr_comp(n)
     return ti_hdr_image
+
+def resize(size:Tuple[int,int]):
+    global ti_hdr_image, ti_ldr_image_stack, ti_weight_map_stack,ti_swap_ldr_image_stack
+    shape = ti_ldr_image_stack.shape
+    print(shape)
+    channel = 3  # pixel channel
+    n = shape[0]
+
+    ti_hdr_image = ti.Vector.field(channel, ti.i32, shape=(size[0], size[1]))
+    ti_weight_map_stack = ti.Vector.field(channel, ti.f32, shape=(n, size[0], size[1]))
+    ti_swap_ldr_image_stack = ti.Vector.field(channel, ti.i32, shape=(n, size[0], size[1]))
+
+    _resize(size[0], size[1])
 
 def set_data(shutters:List[float], ldr_image_stack:np.ndarray):
     global _image_stack_shape
