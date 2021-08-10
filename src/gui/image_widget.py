@@ -20,13 +20,15 @@ class ImageWidget(Widget):
             dpg.delete_item(self._texture_id)
         self._texture_id = None
 
+
     def _set_or_recreate_texture(self, width, height, norm_rbga:List[float]):
         if width <= 0 or height <= 0:
             return
         if not self.valid() or self._width != width or self._height != height:
             self._release_texture()
+            rect = dpg.get_item_rect_size(self.parent())
             self._texture_id = dpg.add_dynamic_texture(width, height,norm_rbga, parent=self._texture_container)
-            dpg.add_image(self._texture_id,parent=self.widget(),width=600,height=int(height*1.0/width * 600))
+            dpg.add_image(self._texture_id,parent=self.widget(), width=rect[0], height=rect[1])
             self._width = width
             self._height = height
             return

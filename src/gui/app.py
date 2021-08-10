@@ -10,6 +10,7 @@ from base.msg_queue import get_msg_queue, msg
 from gui.utils import bind_event, bind_param
 from gui.image_widget import ImageWidget
 from gui.list_widget import ImageListWidget
+from gui.bracket_series_container_widget import ImageContainerWidget
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
@@ -48,8 +49,9 @@ class App:
         self._gui_id_image_list_box:int = None
         self._gui_id_image_bracket_list_box:int = None
         self._gui_id_parameter_panel_parent:int = None
+        self._gui_id_parameter_panel:int = None
         self._result_image_widget:ImageWidget = None
-        self._image_list_widget:ImageListWidget = None
+        self._image_container_widget:ImageContainer = None
 
     def _setup_bicow(self):
         bc.bicow_init()
@@ -136,18 +138,27 @@ class App:
         self._open_from_brackets(image_brackets)
 
     def _open_from_brackets(self, image_brackets: List[ImageBracket]):
-        bracket_list_item = [b.name for b in image_brackets]
-        image_list_item = [i.filename for b in image_brackets for i in b.images]
-        # print(bracket_list_item, image_list_item)
-        dpg.configure_item(item=self._gui_id_image_list_box, items=image_list_item, num_items=20)
-        dpg.configure_item(item=self._gui_id_image_bracket_list_box, items=bracket_list_item, num_items=20)
-        self._open_hdr_pipeline(image_brackets)
+        self._image_container_widget.set_data(image_brackets)
+        if len(image_brackets) > 0:
+            self._init_hdr_pipeline(image_brackets[0])
+        else:
+            print('Empty bracket!!!')
 
-    def _open_hdr_pipeline(self, braket_list:List[ImageBracket]):
+    def _update_current_bracket(self, bracket:ImageBracket)->None:
+        """
+        Init bracket to process while recreate parameter panel gui
+        """
+        self._bicow_hdr = bc.BicowHDR((400, 400))
+        self._bicow_hdr.set_data(bracket)
+        if self._gui_id_parameter_panel is not None:
+            dpg.delete_item(self._gui_id_parameter_panel)
+            self._gui_id_parameter_panel = None
+        self._gui_id_parameter_panel = self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
+
+    def _init_hdr_pipeline(self, braket:ImageBracket):
         @msg
         def e():
-            self._bicow_hdr = bc.BicowHDR(braket_list)
-            self._gui_add_parameter_panel(self._gui_id_parameter_panel_parent)
+            self._update_current_bracket(braket)
         e()
 
     def _update_process(self, s,a,u):
@@ -156,7 +167,6 @@ class App:
             self._bicow_hdr.refine()
             output = self._bicow_hdr.get_processed_data().to_numpy()
             self._result_image_widget.from_numpy(output)
-            print(output.shape)
         proc()
 
     def _gui_add_bracket_preview(self):
@@ -171,17 +181,13 @@ class App:
 
     def _setup_timelapse_tab(self):
         with dpg.group(horizontal=True):
-            with dpg.child(autosize_y=True, width=200):
+            with dpg.child(autosize_y=True, width=200, height=200) as cid:
                 s = dpg.add_button(label='Export Settings...')
                 with dpg.popup(s,modal=True,mousebutton=dpg.mvMouseButton_Left) as modal_id:
                     dpg.add_text('test')
                 dpg.add_same_line()
                 dpg.add_button(label='Export')
-                with dpg.child(height=250,no_scrollbar=True):
-                    self._gui_id_image_bracket_list_box = dpg.add_listbox(label='',items=[],num_items=0,width=0,callback=self._on_bracket_listbox_callback)
-                with dpg.child(no_scrollbar=True) as cid:
-                    self._gui_id_image_list_box = dpg.add_listbox(label='',items=[],num_items=0,width=0, callback=self._on_bracket_listbox_callback)
-                    self._image_list_widget = ImageListWidget(label='', cid)
+                self._image_container_widget = ImageContainerWidget(cid)
             with dpg.child() as a:
                 self._gui_id_img_preview = self._gui_add_image_preview(a)
                 with dpg.group(horizontal=True):
