@@ -242,6 +242,7 @@ def _resize(width:ti.template(), height:ti.template()):
     for n, i, j in ti_swap_ldr_image_stack:
         ti_swap_ldr_image_stack[n, i, j] = ti_ldr_image_stack[n,scale_i * i,scale_j * j]
 
+    ti_ldr_image_stack.destroy()
     ti_ldr_image_stack = ti_swap_ldr_image_stack
     ti_swap_ldr_image_stack = None
 
