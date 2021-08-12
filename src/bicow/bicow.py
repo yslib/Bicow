@@ -57,11 +57,6 @@ class BicowHDR:
         shutters = np.array(shutter)
         ti_hdr.set_data(shutters, ldr_image_stack)
 
-    def resize(self, size:Tuple[int, int])->None:
-        """
-        Resizes image to the given size
-        """
-        ti_hdr.resize(size)
 
     def refine(self):
         self._data = ti_hdr.refine()
