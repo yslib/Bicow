@@ -12,11 +12,11 @@ ti_canvas = ti.field(ti.f32)                # ouput image for display(include so
 
 fb = ti.FieldsBuilder()
 
-ti_ldr_image_stack = ti.Vector.field(3, ti.f32)       # input bracket, with a shape of (n, image_width, image_height, channel)
 ti_swap_ldr_image_stack = None  # used for resizing
 ti_shutters = None              # array of shutter speed of bracket ti_shutters.shape[0] = n
 ti_weight_map_stack = None      # weight map for each image of bracket for debug, with a shape of (n, image_width, image_height, channel)
-ti_hdr_image = None             # output hdr image
+ti_ldr_image_stack = ti.Vector.field(3, ti.i32)       # input bracket, with a shape of (n, image_width, image_height, channel)
+ti_hdr_image = ti.Vector.field(3, ti.i32)             # output hdr image
 
 _image_stack_shape:Tuple[int,int,int,int] = ()         #
 
@@ -297,10 +297,12 @@ def _init(shape):
     channel = shape[3]  # pixel channel
     size = (shape[1], shape[2])  # image size
 
-    ti_hdr_image = ti.Vector.field(channel, ti.i32, shape=(size[0], size[1]))
+    # ti_hdr_image = ti.Vector.field(channel, ti.i32, shape=(size[0], size[1]))
     ti_weight_map_stack = ti.Vector.field(channel, ti.f32, shape=(n, size[0], size[1]))
     # ti_ldr_image_stack = ti.Vector.field(channel, ti.i32, shape=(n, size[0], size[1]))
+    fb.dense(ti.ij, (size[0], size[1])).place(ti_hdr_image)
     fb.dense(ti.ijk, (n, size[0], size[1])).place(ti_ldr_image_stack)
+    fb.finalize()
     print('fb place success')
     ti_shutters = ti.field(ti.f32, shape=n)
 
@@ -310,11 +312,13 @@ def _set_data(ldr_image_stack, shutters):
     global ti_K, ti_B, ti_Zmin, ti_Zmax
 
     ti_ldr_image_stack.from_numpy(ldr_image_stack)
+    print(ti_ldr_image_stack)
     ti_shutters.from_numpy(shutters)
 
 def refine():
     n = ti_ldr_image_stack.shape[0]
     hdr_comp(n)
+    print(ti_shutters)
     return ti_hdr_image
 
 def resize(size:Tuple[int,int]):
