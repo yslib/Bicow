@@ -301,7 +301,7 @@ def _init(shape):
     ti_weight_map_stack = ti.Vector.field(channel, ti.f32, shape=(n, size[0], size[1]))
     # ti_ldr_image_stack = ti.Vector.field(channel, ti.i32, shape=(n, size[0], size[1]))
     fb.dense(ti.ijk, (n, size[0], size[1])).place(ti_ldr_image_stack)
-    print('fb place success')
+    fb.finalize()
     ti_shutters = ti.field(ti.f32, shape=n)
 
 
