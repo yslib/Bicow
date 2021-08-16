@@ -6,10 +6,61 @@ import math
 import numpy as np
 from renderer_utils import ray_aabb_intersection, intersect_sphere, ray_plane_intersect, reflect, refract
 
+@ti.data_oriented
+class Camera:
+    def __init__(self, res, camera_pos, fov):
+        self.n = 10
+        self.fov = ti.field(ti.f32)
+        self.camera_pos = ti.Vector.field(3, ti.f32)
+        self.aspect_ratio = ti.field(ti.f32)
+        self.res = ti.Vector.field(2, ti.i32)
+        self.curvatureRadius = ti.field(ti.f32)
+        self.thickness = ti.field(ti.f32)
+        self.eta = ti.field(ti.f32)
+        self.aperture = ti.field(ti.f32)
+        self.count_var = ti.field(ti.i32)
+
+        ti.root.dense(ti.i, (self.n, )).place(self.curvatureRadius, self.thickness, self.eta, self.aperture)
+        ti.root.place(self.res)
+        ti.root.place(self.camera_pos)
+        ti.root.place(self.aspect_ratio)
+        ti.root.place(self.fov)
+        ti.root.place(self.count_var)
+
+        self.aspect_ratio[None] = float(res[0])/res[1]
+        self.res = ti.Vector([400, 400])
+        self.fov[None] = fov
+        self.camera_pos = ti.Vector([*camera_pos])
+
+        self.stratify_res = 5
+        self.inv_stratify = 1.0 / 5.0
+        self.count_var[None] = 0
+
+    @ti.func
+    def gen_ray(self, u:ti.template(), v:ti.template()):
+        pos = self.camera_pos
+        cur_iter = self.count_var[None]
+        str_x, str_y = (cur_iter / self.stratify_res), (cur_iter % self.stratify_res)
+        ray_dir = ti.Vector([
+            (2 * self.fov[None] * (u + (str_x) * self.inv_stratify) / res[1] -
+             self.fov[None] * self.aspect_ratio[None] - 1e-5),
+            (2 * self.fov[None] * (v + (str_y) * self.inv_stratify) / res[1] -
+             self.fov[None] - 1e-5),
+            -1.0,
+        ])
+        ray_dir = ray_dir.normalized()
+        return ray_dir
+
+    @ti.func
+    def count_add(self):
+        self.count_var[None] = (self.count_var[None] + 1) % (stratify_res * stratify_res)
+
+
+
 ti.init(arch=ti.gpu)
 res = (400, 400)
-color_buffer = ti.Vector(3, dt=ti.f32, shape=res)
-count_var = ti.var(ti.i32, shape=(1, ))
+color_buffer = ti.Vector.field(3, dtype=ti.f32, shape=res)
+count_var = ti.field(ti.i32, shape=(1, ))
 
 max_ray_depth = 10
 eps = 1e-4
@@ -50,6 +101,8 @@ sp1_radius = 0.22
 sp2_center = ti.Vector([-0.28, 0.55, 0.8])
 sp2_radius = 0.32
 
+
+cam = Camera((400, 400), (0.0, 0.6, 3.0),0.8)
 
 def make_box_transform_matrices():
     rad = math.pi / 8.0
@@ -403,23 +456,9 @@ inv_stratify = 1.0 / 5.0
 @ti.kernel
 def render():
     for u, v in color_buffer:
-        aspect_ratio = res[0] / res[1]
-        pos = camera_pos
-        cur_iter = count_var[0]
-        str_x, str_y = (cur_iter / stratify_res), (cur_iter % stratify_res)
-        ray_dir = ti.Vector([
-            (2 * fov * (u + (str_x) * inv_stratify) / res[1] -
-             fov * aspect_ratio - 1e-5),
-            (2 * fov * (v + (str_y)* inv_stratify) / res[1] -
-             fov - 1e-5),
-            -1.0,
-        ])
-        ray_dir = ray_dir.normalized()
-        print(ray_dir)
-
+        ray_dir = cam.gen_ray(u, v)
         acc_color = ti.Vector([0.0, 0.0, 0.0])
         throughput = ti.Vector([1.0, 1.0, 1.0])
-
         depth = 0
         while depth < max_ray_depth:
             closest, hit_normal, hit_color, mat = intersect_scene(pos, ray_dir)
@@ -445,6 +484,7 @@ def render():
                 throughput *= hit_color
         color_buffer[u, v] += acc_color
     count_var[0] = (count_var[0] + 1) % (stratify_res * stratify_res)
+    cam.count_add()
 
 
 gui = ti.GUI('Realistic camera', res)
