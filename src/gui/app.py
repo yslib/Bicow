@@ -151,7 +151,6 @@ class App:
         rect = dpg.get_item_rect_size(self._result_image_widget.parent())
         self._bicow_hdr = bc.BicowHDR(rect)
         self._bicow_hdr.set_data(bracket)
-        self._bicow_hdr.resize(rect)
         if self._gui_id_parameter_panel is not None:
             dpg.delete_item(self._gui_id_parameter_panel)
             self._gui_id_parameter_panel = None

@@ -4,17 +4,19 @@ import numpy as np
 
 # declare ti param
 
-ti_window_size = None
-ti_sub_window_size = None
-ti_sub_window_layout = None
-ti_canvas = None                # ouput image for display(include some debug images)
+ti_window_size = ti.field(ti.i32)
+ti_sub_window_size = ti.field(ti.i32)
+ti_sub_window_layout = ti.field(ti.i32)
+ti_canvas = ti.field(ti.f32)                # ouput image for display(include some debug images)
 
-ti_ldr_image_stack = None       # input bracket, with a shape of (n, image_width, image_height, channel)
+
+fb = ti.FieldsBuilder()
+
+ti_ldr_image_stack = ti.Vector.field(3, ti.f32)       # input bracket, with a shape of (n, image_width, image_height, channel)
 ti_swap_ldr_image_stack = None  # used for resizing
 ti_shutters = None              # array of shutter speed of bracket ti_shutters.shape[0] = n
 ti_weight_map_stack = None      # weight map for each image of bracket for debug, with a shape of (n, image_width, image_height, channel)
 ti_hdr_image = None             # output hdr image
-
 
 _image_stack_shape:Tuple[int,int,int,int] = ()         #
 
@@ -94,7 +96,7 @@ def init_param():
 
 @ti.func
 def w_uniform(z) -> ti.Vector:
-    return ti.Vector([1.0, 1.0, 1.0]) * (z >= ti_Zmin and z <= ti_Zmax)
+    return ti.Vector([1.0, 1.0, 1.0]) * (z >= ti_Zmin[None] and z <= ti_Zmax[None])
 
 @ti.func
 def gaussian(x) -> ti.Vector:
@@ -102,11 +104,11 @@ def gaussian(x) -> ti.Vector:
 
 @ti.func
 def w_gaussian(z) -> ti.Vector:
-    return gaussian(z) * (z >= ti_Zmin and z <= ti_Zmax)
+    return gaussian(z) * (z >= ti_Zmin[None] and z <= ti_Zmax[None])
 
 @ti.func
 def w_tent(z) -> ti.Vector:
-    return min(z, 1.0-z) * (z >= ti_Zmin and z <= ti_Zmax)
+    return min(z, 1.0-z) * (z >= ti_Zmin[None] and z <= ti_Zmax[None])
 
 @ti.func
 def w_photo(z, t) -> ti.Vector:
@@ -297,7 +299,9 @@ def _init(shape):
 
     ti_hdr_image = ti.Vector.field(channel, ti.i32, shape=(size[0], size[1]))
     ti_weight_map_stack = ti.Vector.field(channel, ti.f32, shape=(n, size[0], size[1]))
-    ti_ldr_image_stack = ti.Vector.field(channel, ti.i32, shape=(n, size[0], size[1]))
+    # ti_ldr_image_stack = ti.Vector.field(channel, ti.i32, shape=(n, size[0], size[1]))
+    fb.dense(ti.ijk, (n, size[0], size[1])).place(ti_ldr_image_stack)
+    print('fb place success')
     ti_shutters = ti.field(ti.f32, shape=n)
 
 
@@ -322,6 +326,7 @@ def resize(size:Tuple[int,int]):
 
     ti_hdr_image = ti.Vector.field(channel, ti.i32, shape=(size[0], size[1]))
     ti_weight_map_stack = ti.Vector.field(channel, ti.f32, shape=(n, size[0], size[1]))
+
     ti_swap_ldr_image_stack = ti.Vector.field(channel, ti.i32, shape=(n, size[0], size[1]))
 
     _resize(size[0], size[1])
