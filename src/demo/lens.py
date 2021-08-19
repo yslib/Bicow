@@ -1,4 +1,5 @@
 import sys
+from numpy.lib.function_base import select
 sys.path.append('.')
 import taichi as ti
 import time
@@ -54,6 +55,62 @@ class Camera:
     @ti.func
     def count_add(self):
         self.count_var[None] = (self.count_var[None] + 1) % (stratify_res * stratify_res)
+
+    @ti.func
+    def intersect_with_sphere(self,
+                            center:ti.template(),
+                            radius: ti.template(),
+                            ro:ti.Vector,
+                            rd:ti.Vector):
+        """
+        A specialization for evaluating the intersection of ray and sphere which center is along z-axis
+        Returns the ray paramter t and the intersection normal
+        """
+        t = 0.0
+        n = ti.Vector([0.0,0.0,0.0])
+        return True, t, n
+
+    @ti.func
+    def gen_ray_from_film(self, ori: ti.Vector, dir:ti.Vector):
+        """
+        Input ray is the initial ray sampled from film to the rear lens element.
+        Returns True and the output ray if the ray could be pass the lens system
+        or returns False
+        """
+        ro, rd = ti.Vector([ori.x, ori.y, -ori.z]), ti.Vector([dir.x, dir.y, -dir.z])
+        elemZ = 0.0
+        for i in ti.static(range(10 - 1, -1, -1)):
+            elemZ -= self.thickness[i]
+            is_stop = self.curvatureRadius[i] == 0.0
+            if is_stop:
+                if rd.z >= 0.0:
+                    return False, ro, rd
+                t = (elemZ - ro.z) / rd.z
+            else:
+                radius = self.curvatureRadius[i]
+                centerZ = elemZ + radius
+                isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
+                if not isect:
+                    return False, ro, rd
+
+            hit = ro + rd * t
+            r = hit.x * hit.x + hit.y * hit.y
+            if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
+                return False, ro, rd
+
+            ro = ti.Vector([hit.x, hit.y, hit.z])
+
+            if not is_stop:
+                # refracted by lens
+                etaI = self.eta[i]
+                etaT = self.eta[i - 1] if i > 0 and self.eta[i-1] != 0.0 else 1.0   # the outer of 0-th element is air, whose eta is 1.0
+                rd.normalized()
+                has_r, d = refract(rd, n, etaI/etaT)
+                if not has_r:
+                    return False, ro, rd
+                rd = ti.Vector([d.x, d.y, d.z])
+
+        return True, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, rd.z])
 
 
 
