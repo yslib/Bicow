@@ -1,4 +1,5 @@
 import sys
+from numpy.lib.function_base import select
 sys.path.append('.')
 import taichi as ti
 import time
@@ -20,12 +21,15 @@ class Camera:
         self.aperture = ti.field(ti.f32)
         self.count_var = ti.field(ti.i32)
 
+        self.lens_z = ti.field(ti.f32)
+
         ti.root.dense(ti.i, (self.n, )).place(self.curvatureRadius, self.thickness, self.eta, self.aperture)
         ti.root.place(self.res)
         ti.root.place(self.camera_pos)
         ti.root.place(self.aspect_ratio)
         ti.root.place(self.fov)
         ti.root.place(self.count_var)
+        ti.root.place(self.lens_z)
 
         self.aspect_ratio[None] = float(res[0])/res[1]
         self.res = ti.Vector([400, 400])
@@ -35,6 +39,7 @@ class Camera:
         self.stratify_res = 5
         self.inv_stratify = 1.0 / 5.0
         self.count_var[None] = 0
+        self.loaded = False
 
     @ti.func
     def gen_ray(self, u:ti.template(), v:ti.template()):
@@ -56,15 +61,106 @@ class Camera:
         self.count_var[None] = (self.count_var[None] + 1) % (stratify_res * stratify_res)
 
     @ti.func
-    def gen_realistic_ray(self, u:ti.template(), v:ti.template()):
-        pass
+    def intersect_with_sphere(self,
+                            center:ti.template(),
+                            radius: ti.template(),
+                            ro:ti.Vector,
+                            rd:ti.Vector):
+        """
+        A specialization for evaluating the intersection of ray and sphere which center is along z-axis
+        Returns the ray paramter t and the intersection normal
+        """
+        t = 0.0
+        n = ti.Vector([0.0,0.0,0.0])
+        return True, t, n
 
     @ti.func
-    def trace_lens_from_film(self, ray:ti.template()):
-        rlen = ti.Vector([ray[0], ray[1], -ray[2]])
-        z = 0.0;
+    def lensZ(self):
+        if self.loaded:
+            return self.lens_z[None]
+        self.loaded = True
+        z = 0.0
+        for i in range(10):
+            z += self.thickness[i]
+        self.lens_z[None] = z
+        return z
+
+    @ti.func
+    def gen_ray_from_scene(self, ori, dir):
+        ro, rd = ti.Vector([ori.x, ori.y, -ori.z]), ti.Vector([dir.x, dir.y, -dir.z])
+        elemZ = self.lensZ()
+
         for i in ti.static(range(10)):
-            z -= self.thickness[i]
+            is_stop = self.curvatureRadius[i] == 0.0
+            if is_stop:
+                t = (elemZ - ro.z) / rd.z
+            else:
+                radius = self.curvatureRadius[i]
+                centerZ = elemZ + radius
+                isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
+                if not isect:
+                    return False, ro, rd
+
+            hit = ro + rd * t
+            r = hit.x * hit.x + hit.y * hit.y
+            if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
+                return False, ro, rd
+
+            if not is_stop:
+                # refracted by lens
+                etaI = 1.0 if i == 0 or self.eta[i - 1] == 0.0 else self.eta[i - 1]
+                etaT = self.eta[i] if self.eta[i] != 0.0 else 1.0
+                rd.normalized()
+                has_r, d = refract(-rd, n, etaI/etaT)
+                if not has_r:
+                    return False, ro, rd
+                rd = ti.Vector([d.x, d.y, d.z])
+
+            elemZ += self.thickness[i]
+
+        return True, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, rd.z])
+
+    @ti.func
+    def gen_ray_from_film(self, ori: ti.Vector, dir:ti.Vector):
+        """
+        Input ray is the initial ray sampled from film to the rear lens element.
+        Returns True and the output ray if the ray could be pass the lens system
+        or returns False
+        """
+        ro, rd = ti.Vector([ori.x, ori.y, -ori.z]), ti.Vector([dir.x, dir.y, -dir.z])
+        elemZ = 0.0
+        for i in ti.static(range(10 - 1, -1, -1)):
+            elemZ -= self.thickness[i]
+            is_stop = self.curvatureRadius[i] == 0.0
+            if is_stop:
+                if rd.z >= 0.0:
+                    return False, ro, rd
+                t = (elemZ - ro.z) / rd.z
+            else:
+                radius = self.curvatureRadius[i]
+                centerZ = elemZ + radius
+                isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
+                if not isect:
+                    return False, ro, rd
+
+            hit = ro + rd * t
+            r = hit.x * hit.x + hit.y * hit.y
+            if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
+                return False, ro, rd
+
+            ro = ti.Vector([hit.x, hit.y, hit.z])
+
+            if not is_stop:
+                # refracted by lens
+                etaI = self.eta[i]
+                etaT = self.eta[i - 1] if i > 0 and self.eta[i - 1] != 0.0 else 1.0   # the outer of 0-th element is air, whose eta is 1.0
+                rd.normalized()
+                has_r, d = refract(-rd, n, etaI/etaT)
+                if not has_r:
+                    return False, ro, rd
+                rd = ti.Vector([d.x, d.y, d.z])
+
+        return True, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, rd.z])
 
 
 
