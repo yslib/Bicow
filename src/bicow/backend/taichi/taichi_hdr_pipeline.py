@@ -303,7 +303,6 @@ def _init(shape):
     fb.dense(ti.ij, (size[0], size[1])).place(ti_hdr_image)
     fb.dense(ti.ijk, (n, size[0], size[1])).place(ti_ldr_image_stack)
     fb.finalize()
-    print('fb place success')
     ti_shutters = ti.field(ti.f32, shape=n)
 
 
