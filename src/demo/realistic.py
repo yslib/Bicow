@@ -1,8 +1,45 @@
 import taichi as ti
+from demo import lens, renderer_utils
 from renderer_utils import refract, intersect_sphere
 
 elements_count = 10
-pupil_sample_count = 64
+pupil_interval_count = 64
+eps = 1e-5
+
+
+@ti.func
+def lerp(val, begin ,end):
+    return begin * (1.0 - val) + val * end
+
+@ti.func
+def bound_union_with(bmin, bmax, pos):
+    return ti.min(bmin, pos), ti.max(bmax, pos)
+
+@ti.func
+def make_bound2():
+    return ti.Vector([99999.0, 99999.0]), ti.Vector([-99999.0,-99999.0])
+
+@ti.func
+def inside_aabb(bmin, bmax, pos):
+    return all(bmin <= pos) and all(pos <= bmax)
+
+@ti.func
+def radical_inverse_2(value):
+    return 1.0
+
+@ti.func
+def radical_inverse_3(value):
+    inv_base = 1.0/3.0
+    reversed = 0
+    n = 1.0
+    while value != 0:
+        next = value / 3
+        _digit = value - next * 3
+        reversed = reversed * 3 + _digit
+        n *= inv_base
+        value = next
+    return reversed * n
+
 
 @ti.data_oriented
 class RealisticCamera:
@@ -21,7 +58,7 @@ class RealisticCamera:
         self.lens_z = ti.field(ti.f32)
 
         ti.root.dense(ti.i, (elements_count, )).place(self.curvatureRadius, self.thickness, self.eta, self.aperture)
-        ti.root.dense(ti.i, (pupil_sample_count, )).place(self.exitPupilBoundMin, self.exitPupilBoundMax)
+        ti.root.dense(ti.i, (pupil_interval_count, )).place(self.exitPupilBoundMin, self.exitPupilBoundMax)
         ti.root.place(self.res)
         ti.root.place(self.camera_pos)
         ti.root.place(self.aspect_ratio)
@@ -33,32 +70,10 @@ class RealisticCamera:
 
         self.stratify_res = 5
         self.inv_stratify = 1.0 / 5.0
-        self.loaded = False
 
     @ti.func
-    def bound_union_with(self, bmin, bmax, pos):
-        """
-        given a bound and a point returns a union bound
-        """
-
-        pass
-
-    @ti.func
-    def redical_inverse():
-        pass
-
-    @ti.func
-    def redical_inverse_3(self,value):
-        inv_base = 1.0/3.0
-        reversed = 0
-        n = 1.0
-        while value != 0:
-            next = value / 3
-            _digit = value - next * 3
-            reversed = reversed * 3 + _digit
-            n *= inv_base
-            value = next
-        return reversed * n
+    def rear_z(self):
+        return self.thickness[elements_count - 1]
 
 
     @ti.func
@@ -66,11 +81,78 @@ class RealisticCamera:
         """
         pre-process exit pupil of the lens system
         """
-        for i in range(pupil_sample_count):
-            r0 = ti.cast(i, ti.float) / pupil_sample_count * self.film_diagnal / 2.0
-            r1 = ti.cast(i + 1, ti.float) / pupil_sample_count * self.film_diagnal / 2.0
-            self.exitPupilBoundMin[i] = ti.Vector([0.0, 0.0])
-            self.exitPupilBoundMax[i] = ti.Vector([1.0, 1.0])
+
+        rearRadius = self.curvatureRadius[elements_count - 1]
+        rearZ = self.rear_z()
+        count = 0
+        samples = 1024 * 1024
+        half = 1.5 * rearRadius
+        proj_bmin, proj_bmax = ti.Vector([-half, half]), ti.Vector([-half, half])
+        for i in range(pupil_interval_count):
+            r0 = ti.cast(i, ti.float) / pupil_interval_count * self.film_diagnal / 2.0
+            r1 = ti.cast(i + 1, ti.float) / pupil_interval_count * self.film_diagnal / 2.0
+
+            bmin, bmax = make_bound2()
+            for j in range(samples):
+                u = radical_inverse_2(j)
+                v = radical_inverse_3(j)
+                film_pos = ti.Vector([lerp(ti.cast(j, ti.f32), r0, r1), 0.0, 0.0])
+                lens_pos = ti.Vector([lerp(u,-half,half),lerp(v,-half, half), rearZ])
+                if inside_aabb(bmin, bmax, lens_pos) or self.gen_ray_from_film(film_pos,(lens_pos - film_pos).normalized()):
+                    bmin,bmax = bound_union_with(bmin,bmax,ti.Vector([lens_pos.x, lens_pos.y]))
+                    count += 1
+
+            if count == 0:
+                bmin, bmax = proj_bmin, proj_bmax
+
+            assert bmax > bmin
+
+            delta = 2 * (bmax-bmin).norm() / ti.sqrt(samples)
+            bmin -= delta
+            bmax += delta
+
+            self.exitPupilBoundMin[i] = bmin
+            self.exitPupilBoundMax[i] = bmax
+
+    @ti.func
+    def sample_exit_pupil(self, film_pos, uv):
+        """
+        Returns the sample point and the area
+        """
+        assert uv >= 0.0 and uv <= 1.0
+
+        r = film_pos.norm()
+        index = ti.min(r / self.film_diagnal * 2.0 * pupil_interval_count, pupil_interval_count - 1)
+        bmin, bmax = self.exitPupilBoundMin[index], self.exitPupilBoundMax[index]
+        area = (bmax - bmin).dot(ti.Vector([1.0, 1.0]))
+        sampled = lerp(uv, bmin, bmax)
+        sint = film_pos.y / r if abs(r) < eps else 0.0
+        cost = film_pos.x / r if abs(r) < eps else 0.0
+        return ti.Vector(
+            [
+                cost * sampled.x - sint * sampled.y,
+                sint * sampled.x + cost * sampled.y,
+                self.rear_z()
+            ]), area
+
+    @ti.func
+    def gen_ray(self, film_uv, lens_uv):
+        extent = ti.Vector(
+            [ti.static(self.res[0], ti.f32),
+            ti.static(self.res[1], ti.f32)]
+         )
+        film_pos = lerp(film_uv, ti.Vector([0.0,0.0]), extent)
+        film_pos = film_pos - extent / 2.0
+        lens_pos, area = self.sample_exit_pupil(film_pos, lens_uv)
+        film_pos = ti.Vector([extent.x, extent.y, 0.0])
+        r, d = film_pos, lens_pos - film_pos
+        exit, out_r ,out_d = self.gen_ray_from_film(r, d)
+        if not exit:
+            return area
+
+        # translate the ray from cameray space into world space
+        return out_r, out_d
+
 
     @ti.func
     def compute_cardinal_points(self, in_ro, out_ro, out_rd):

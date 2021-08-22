@@ -1,8 +1,10 @@
-import sys
 import taichi as ti
-import sys
-from realistic import Camera
 
 ti.init()
-camera = Camera((400,400), [0,0,0], 0.8)
 
+a = ti.Vector([-1.2, 0.0])
+b = ti.Vector([0.0, 0.0])
+c = ti.Vector([-1.0, 3.0])
+
+
+print(all(a < b))
