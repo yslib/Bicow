@@ -1,10 +1,11 @@
 import taichi as ti
-from demo import lens, renderer_utils
+import numpy as np
 from renderer_utils import refract, intersect_sphere
 
 elements_count = 10
 pupil_interval_count = 64
 eps = 1e-5
+inf = 9999999.0
 
 
 @ti.func
@@ -17,15 +18,30 @@ def bound_union_with(bmin, bmax, pos):
 
 @ti.func
 def make_bound2():
-    return ti.Vector([99999.0, 99999.0]), ti.Vector([-99999.0,-99999.0])
+    return ti.Vector([inf, inf]), ti.Vector([-inf, -inf])
 
 @ti.func
 def inside_aabb(bmin, bmax, pos):
     return all(bmin <= pos) and all(pos <= bmax)
 
 @ti.func
+def reverse_bits32(n):
+    n = (n << 16) | (n >> 16)
+    n = ((n & 0x00ff00ff) << 8) | ((n & 0xff00ff00) >> 8)
+    n = ((n & 0x0f0f0f0f) << 4) | ((n & 0xf0f0f0f0) >> 4)
+    n = ((n & 0x33333333) << 2) | ((n & 0xcccccccc) >> 2)
+    n = ((n & 0x55555555) << 1) | ((n & 0xaaaaaaaa) >> 1)
+    return n
+
+@ti.func
+def reverse_bits64(n):
+    n0 = reverse_bits32(n)
+    n1 = reverse_bits32(n >> 32)
+    return (n0 << 32) | n1
+
+@ti.func
 def radical_inverse_2(value):
-    return 1.0
+    return reverse_bits64(value) * (1.0/(2^64))
 
 @ti.func
 def radical_inverse_3(value):
@@ -40,10 +56,9 @@ def radical_inverse_3(value):
         value = next
     return reversed * n
 
-
 @ti.data_oriented
 class RealisticCamera:
-    def __init__(self, res, camera_pos):
+    def __init__(self, res, camera_pos, up, front):
         self.camera_pos = ti.Vector.field(3, ti.f32)
         self.aspect_ratio = ti.field(ti.f32)
         self.res = ti.Vector.field(2, ti.i32)
@@ -54,6 +69,11 @@ class RealisticCamera:
         self.exitPupilBoundMin = ti.Vector.field(ti.f32)
         self.exitPupilBoundMax = ti.Vector.field(ti.f32)
         self.film_diagnal = 35.00
+        self.shutter = 0.01
+
+        self.camera2world = ti.Matrix.field(ti.f32)
+        self.up = up
+        self.front = front
 
         self.lens_z = ti.field(ti.f32)
 
@@ -72,9 +92,44 @@ class RealisticCamera:
         self.inv_stratify = 1.0 / 5.0
 
     @ti.func
+    def init_transform(self):
+        up = ti.Vector([self.up[0], self.up[1].self.up[2], 1.0])
+        front = ti.Vector([self.front[0], self.front[1], self.front[2], 1.0])
+        right = front.cross(up)
+        self.camera2world = ti.Matrix.cols([[front.x,front.y,front.z,1.0],[up.x,up.y,up.z, 1.0],[right.x,right.y,right.z,1.0],[0.0,0.0,0.0,1.0]])
+
+    def load_lens_data(self):
+        lense = [
+            # curvature radius, thickness, index of refraction, aperture diameter
+            [35.98738,1.21638,1.54,23.716]
+            [11.69718,9.9957,1,17.996]
+            [13.08714,5.12622,1.772,12.364]
+            [22.63294,1.76924,1.617,9.812]
+            [71.05802,0.8184,1,9.152]
+            [0,2.27766,0,8.756]
+            [9.58584,2.43254,1.617,8.184]
+            [11.28864,0.11506,1,9.152]
+            [166.7765,3.09606,1.713,10.648]
+            [7.5911,1.32682,1.805,11.44]
+            [16.7662,3.98068,1,12.276]
+            [7.70286,1.21638,1.617,13.42]
+            [11.97328,0.0,1,17.996]
+        ]
+
+
+    @ti.func
+    def camera_2_world(self, o, d):
+        wo = self.camera2world @ ti.Vector([o.x,o.y,o.z, 1.0])
+        wd = self.camera2world @ ti.Vector([d.x,d.y,d.z, 1.0])
+        return ti.Vector([wo.x,wo.y,wo.z]), ti.Vector([wd.x,wd.y,wd.z])
+
+    @ti.func
     def rear_z(self):
         return self.thickness[elements_count - 1]
 
+    @ti.func
+    def rear_radius(self):
+        return self.curvatureRadius[elements_count - 1]
 
     @ti.func
     def recompute_exit_pupil(self):
@@ -94,8 +149,7 @@ class RealisticCamera:
 
             bmin, bmax = make_bound2()
             for j in range(samples):
-                u = radical_inverse_2(j)
-                v = radical_inverse_3(j)
+                u, v = radical_inverse_2(j), radical_inverse_3(j)
                 film_pos = ti.Vector([lerp(ti.cast(j, ti.f32), r0, r1), 0.0, 0.0])
                 lens_pos = ti.Vector([lerp(u,-half,half),lerp(v,-half, half), rearZ])
                 if inside_aabb(bmin, bmax, lens_pos) or self.gen_ray_from_film(film_pos,(lens_pos - film_pos).normalized()):
@@ -105,8 +159,9 @@ class RealisticCamera:
             if count == 0:
                 bmin, bmax = proj_bmin, proj_bmax
 
-            assert bmax > bmin
+            assert all(bmax > bmin)
 
+            # extents pupil bound
             delta = 2 * (bmax-bmin).norm() / ti.sqrt(samples)
             bmin -= delta
             bmax += delta
@@ -145,13 +200,16 @@ class RealisticCamera:
         film_pos = film_pos - extent / 2.0
         lens_pos, area = self.sample_exit_pupil(film_pos, lens_uv)
         film_pos = ti.Vector([extent.x, extent.y, 0.0])
-        r, d = film_pos, lens_pos - film_pos
-        exit, out_r ,out_d = self.gen_ray_from_film(r, d)
+        o, d = film_pos, lens_pos - film_pos
+        exit, out_o ,out_d = self.gen_ray_from_film(o, d)
         if not exit:
             return area
 
+        cost = out_d.z
+        cos4t = cost * cost * cost * cost
+        weight = self.shutter * cos4t * area /(self.rear_z() * self.rear_z())
         # translate the ray from cameray space into world space
-        return out_r, out_d
+        return self.camera_2_world(out_o, out_d), weight
 
 
     @ti.func
@@ -201,8 +259,7 @@ class RealisticCamera:
                             ro,
                             rd):
         """
-        A specialization for evaluating the intersection of ray and sphere which center is along z-axis
-        Returns the ray paramter t and the intersection normal
+        center: z depth of lens sphere center
         """
 
         t = 0.0
@@ -268,7 +325,7 @@ class RealisticCamera:
 
             elemZ += self.thickness[i]
 
-        return True, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, rd.z])
+        return True, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z])
 
     @ti.func
     def gen_ray_from_film(self, ori, dir):
@@ -310,4 +367,4 @@ class RealisticCamera:
                     return False, ro, rd
                 rd = ti.Vector([d.x, d.y, d.z])
 
-        return True, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, rd.z])
+        return True, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z])
