@@ -227,7 +227,7 @@ class RealisticCamera:
         """
         tf = -out_ro.x / out_rd.x
         tp = (in_ro.x - out_ro.x) / out_rd.x
-        return (out_ro + out_rd * tf).z, (out_ro + out_rd * tp).z
+        return -(out_ro + out_rd * tf).z, -(out_ro + out_rd * tp).z
 
 
     @ti.func
