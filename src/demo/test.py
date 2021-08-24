@@ -7,9 +7,9 @@ cam = RealisticCamera((400,400), [0.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0])
 
 @ti.kernel
 def run():
-    print('aaaaaaa')
-    a, b = cam.get_lenses_focal_length()
-    print('bbbbbb')
-    print('focal length: ', a,b)
+    x = 0.01
+    so = ti.Vector([x, 0.0, 2000.0])
+    sd = ti.Vector([0.0,0.0,-1.0])
+    print(cam.get_lenses_focal_length())
 
 run()

@@ -126,7 +126,7 @@ class RealisticCamera:
 
     @ti.func
     def get_lenses_focal_length(self):
-        a, b ,c,d= self.compute_thick_lens_approximation()
+        a, b ,c, d= self.compute_thick_lens_approximation()
         return a,b
 
     @ti.func
@@ -313,36 +313,43 @@ class RealisticCamera:
         ro, rd = ti.Vector([ti.cast(ori.x,ti.f32), ori.y, -ori.z]), ti.Vector([ti.cast(dir.x,ti.f32), dir.y, -dir.z])
         elemZ = self.front_z()
         ok = True
-        for i in ti.static(range(elements_count)):
-            is_stop = self.curvatureRadius[i] == 0.0
-            if is_stop:
-                t = (elemZ - ro.z) / rd.z
-            else:
-                radius = self.curvatureRadius[i]
-                centerZ = elemZ + radius
-                isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
-                if not isect:
+        t = 0.0
+        n = ti.Vector([0.0,0.0,0.0])
+        for _ in range(1):  # force the inner loop serialized so that break could be used
+            for i in range(elements_count):
+                print(i)
+                is_stop = self.curvatureRadius[i] == 0.0
+                if is_stop:
+                    t = (elemZ - ro.z) / rd.z
+                else:
+                    radius = self.curvatureRadius[i]
+                    centerZ = elemZ + radius
+                    isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
+                    print(isect,t,n)
+                    if not isect:
+                        ok = False
+                        break
+
+
+                hit = ro + rd * t
+                r = hit.x * hit.x + hit.y * hit.y
+                if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
                     ok = False
                     break
 
-            hit = ro + rd * t
-            r = hit.x * hit.x + hit.y * hit.y
-            if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
-                ok = False
-                break
+                if not is_stop:
+                    # refracted by lens
+                    etaI = 1.0 if i == 0 or self.eta[i - 1] == 0.0 else self.eta[i - 1]
+                    etaT = self.eta[i] if self.eta[i] != 0.0 else 1.0
+                    rd.normalized()
+                    has_r, d = refract(-rd, n, etaI/etaT)
+                    if not has_r:
+                        print('has_r', has_r)
+                        ok = False
+                        break
+                    rd = ti.Vector([d.x, d.y, d.z])
 
-            if not is_stop:
-                # refracted by lens
-                etaI = 1.0 if i == 0 or self.eta[i - 1] == 0.0 else self.eta[i - 1]
-                etaT = self.eta[i] if self.eta[i] != 0.0 else 1.0
-                rd.normalized()
-                has_r, d = refract(-rd, n, etaI/etaT)
-                if not has_r:
-                    ok = False
-                    break
-                rd = ti.Vector([d.x, d.y, d.z])
-
-            elemZ += self.thickness[i]
+                elemZ += self.thickness[i]
 
         return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z])
 
@@ -356,39 +363,44 @@ class RealisticCamera:
         ro, rd = ti.Vector([ori.x, ori.y, -ori.z]), ti.Vector([dir.x, dir.y, -dir.z])
         elemZ = 0.0
         ok = True
-        for i in ti.static(range(elements_count - 1, -1, -1)):
-            elemZ -= self.thickness[i]
-            is_stop = self.curvatureRadius[i] == 0.0
-            if is_stop:
-                if rd.z >= 0.0:
-                    ok = False
-                    break
-                t = (elemZ - ro.z) / rd.z
-            else:
-                radius = self.curvatureRadius[i]
-                centerZ = elemZ + radius
-                isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
-                if not isect:
+        t = 0.0
+        n = ti.Vector([0.0,0.0,0.0])
+        for _ in range(1):  # force the inner loop serialized so that break could be used
+            for ii in range(elements_count):
+                i = elements_count - ii - 1
+                print(i)
+                elemZ -= self.thickness[i]
+                is_stop = self.curvatureRadius[i] == 0.0
+                if is_stop:
+                    if rd.z >= 0.0:
+                        ok = False
+                        break
+                    t = (elemZ - ro.z) / rd.z
+                else:
+                    radius = self.curvatureRadius[i]
+                    centerZ = elemZ + radius
+                    isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
+                    if not isect:
+                        ok = False
+                        break
+
+                hit = ro + rd * t
+                r = hit.x * hit.x + hit.y * hit.y
+                if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
                     ok = False
                     break
 
-            hit = ro + rd * t
-            r = hit.x * hit.x + hit.y * hit.y
-            if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
-                ok = False
-                break
+                ro = ti.Vector([hit.x, hit.y, hit.z])
 
-            ro = ti.Vector([hit.x, hit.y, hit.z])
-
-            if not is_stop:
-                # refracted by lens
-                etaI = self.eta[i]
-                etaT = self.eta[i - 1] if i > 0 and self.eta[i - 1] != 0.0 else 1.0   # the outer of 0-th element is air, whose eta is 1.0
-                rd.normalized()
-                has_r, d = refract(-rd, n, etaI/etaT)
-                if not has_r:
-                    ok = False
-                    break
-                rd = ti.Vector([d.x, d.y, d.z])
+                if not is_stop:
+                    # refracted by lens
+                    etaI = self.eta[i]
+                    etaT = self.eta[i - 1] if i > 0 and self.eta[i - 1] != 0.0 else 1.0   # the outer of 0-th element is air, whose eta is 1.0
+                    rd.normalized()
+                    has_r, d = refract(-rd, n, etaI/etaT)
+                    if not has_r:
+                        ok = False
+                        break
+                    rd = ti.Vector([d.x, d.y, d.z])
 
         return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z])
