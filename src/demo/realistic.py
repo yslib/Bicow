@@ -96,7 +96,7 @@ class RealisticCamera:
         self.camera2world.from_numpy(np.array([[1,1,1,1],[1,1,1,1],[1,1,1,1],[1,1,1,1]]))
 
     def load_lens_data(self):
-        lense = [
+        wide22 = [
             # curvature radius, thickness, index of refraction, aperture diameter
             [35.98738, 1.21638, 1.54, 23.716],
             [11.69718, 9.9957, 1, 17.996],
@@ -112,7 +112,30 @@ class RealisticCamera:
             [7.70286,1.21638,1.617,13.42],
             [11.97328,0.0,1,17.996]
         ]
-        a = np.array(lense).transpose()
+        dgauss50 = [
+            [29.475,3.76,1.67,25.2],
+            [84.83,0.12,1,25.2],
+            [19.275,4.025,1.67,23],
+            [40.77,3.275,1.699,23],
+            [12.75,5.705,1,18],
+            [0,4.5,0,17.1],
+            [-14.495,1.18,1.603,17],
+            [40.77,6.065,1.658,20],
+            [-20.385,0.19,1,20],
+            [437.065,3.22,1.717,20],
+            [-39.73,0,1,20]
+        ]
+        telephoto=[
+            [21.851,0	,1.529,19.0],
+            [-34.546,5.008,1.599,17.8],
+            [108.705,1.502,1.0,16.6],
+            [  0,1.127,0,16.2],
+            [-12.852,26.965,1.613,12.6],
+            [19.813,1.502,1.603,13.4],
+            [-20.378,5.008,1.0,14.8]
+        ]
+
+        a = np.array(wide22).transpose()
         self.curvatureRadius.from_numpy(a[0])
         self.thickness.from_numpy(a[1])
         self.eta.from_numpy(a[2])
@@ -126,13 +149,15 @@ class RealisticCamera:
         return ti.Vector([wo.x,wo.y,wo.z]), ti.Vector([wd.x,wd.y,wd.z])
 
     @ti.func
-    def get_lenses_focal_length(self):
-        a, b ,c, d= self.compute_thick_lens_approximation()
-        return a - b
-
-    @ti.func
     def rear_z(self):
         return self.thickness[elements_count - 1]
+
+    @ti.func
+    def front_z(self):
+        z = 0.0
+        for i in self.thickness:
+            z += self.thickness[i]
+        return z
 
     @ti.func
     def rear_radius(self):
@@ -222,8 +247,8 @@ class RealisticCamera:
     def compute_cardinal_points(self, in_ro, out_ro, out_rd):
         """
         Returns the z coordinate of the principal plane the the focal point
-        (fz, pz)
-        note: these vector are in camera space
+        (fz, pz) in the lenses space
+        note: input vectors are in camera space
         """
         tf = -out_ro.x / out_rd.x
         tp = (in_ro.x - out_ro.x) / out_rd.x
@@ -234,20 +259,26 @@ class RealisticCamera:
     def compute_thick_lens_approximation(self):
         """
         Returns the focal length and the z of principal plane
-        return fz1, pz1, fz2, pz2
+        return fz1, pz1, fz2, pz2 in lense space
         """
-        x = 0.001
+        x = self.film_diagnal * 0.001
         so = ti.Vector([x, 0.0, self.front_z() + 1.0])
-        sd = ti.Vector([0.0,0.0,-1.0])
+        sd = ti.Vector([0.0, 0.0, -1.0])
         fo = ti.Vector([x, 0.0, self.rear_z() - 1.0])
-        fd = ti.Vector([0.0,0.0,1.0])
+        fd = ti.Vector([0.0, 0.0, 1.0])
         ok1, o1, d1 = self.gen_ray_from_scene(so, sd)
         ok2, o2, d2 = self.gen_ray_from_film(fo, fd)
         assert ok1 == True and ok2 == True
-        a, b = self.compute_cardinal_points(so, o1, d1)
-        c, d = self.compute_cardinal_points(fo, o2, d2)
-        return a, b, c, d
+        fz, pz = self.compute_cardinal_points(so, o1, d1)
+        fz1, pz1 = self.compute_cardinal_points(fo, o2, d2)
 
+        assert fz1 < pz1 and pz < fz
+        return fz, pz, fz1, pz1
+
+    @ti.func
+    def get_focal_length(self):
+        fz, pz ,fz1 ,pz1 = self.compute_thick_lens_approximation()
+        return fz - pz, pz1 - fz1
 
     @ti.func
     def focus_thick_camera(self, focus_distance):
@@ -308,16 +339,10 @@ class RealisticCamera:
 
         return ok, t, n
 
-    @ti.func
-    def front_z(self):
-        z = 0.0
-        for i in self.thickness:
-            z += i
-        return z
 
     @ti.func
     def gen_ray_from_scene(self, ori, dir):
-        ro, rd = ti.Vector([ti.cast(ori.x,ti.f32), ori.y, -ori.z]), ti.Vector([ti.cast(dir.x,ti.f32), dir.y, -dir.z])
+        ro, rd = ti.Vector([ti.cast(ori.x,ti.f32), ori.y, -ori.z]), ti.Vector([ti.cast(dir.x,ti.f32), dir.y, -dir.z]).normalized()
         elemZ = -self.front_z()
         ok = True
         t = 0.0
@@ -331,11 +356,11 @@ class RealisticCamera:
                     radius = self.curvatureRadius[i]
                     centerZ = elemZ + radius
                     isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
-                    # print(i, 'pos: ', elemZ, centerZ, 'next_begin: ', ro, rd, t)
                     if not isect:
                         ok = False
                         break
 
+                assert t > 0.0
 
                 hit = ro + rd * t
                 r = hit.x * hit.x + hit.y * hit.y
@@ -349,15 +374,15 @@ class RealisticCamera:
                     etaI = 1.0 if i == 0 or self.eta[i - 1] == 0.0 else self.eta[i - 1]
                     etaT = self.eta[i] if self.eta[i] != 0.0 else 1.0
                     rd.normalized()
-                    has_r, d = refract(-rd, n, etaI/etaT)
+                    has_r, d = refract(rd, n, etaI/etaT)
                     if not has_r:
                         ok = False
                         break
-                    rd = ti.Vector([d.x, d.y, -d.z])
+                    rd = ti.Vector([d.x, d.y, d.z])
 
                 elemZ += self.thickness[i]
 
-        return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z])
+        return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z]).normalized()
 
     @ti.func
     def gen_ray_from_film(self, ori, dir):
@@ -366,12 +391,12 @@ class RealisticCamera:
         Returns True and the output ray if the ray could be pass the lens system
         or returns False
         """
-        ro, rd = ti.Vector([ori.x, ori.y, -ori.z]), ti.Vector([dir.x, dir.y, -dir.z])
+        ro, rd = ti.Vector([ori.x, ori.y, -ori.z]), ti.Vector([dir.x, dir.y, -dir.z]).normalized()
         elemZ = 0.0
         ok = True
         t = 0.0
         n = ti.Vector([0.0,0.0,0.0])
-        for _ in range(1):  # force the inner loop serialized so that break could be used
+        for _ in range(1):  # force the inner loop serialized so that break could be allowed
             for ii in range(elements_count):
                 i = elements_count - ii - 1
                 elemZ -= self.thickness[i]
@@ -386,9 +411,11 @@ class RealisticCamera:
                     centerZ = elemZ + radius
                     isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
                     if not isect:
+                        # print(centerZ, radius, ro ,rd, t, n)
                         ok = False
                         break
 
+                assert t > 0.0
                 hit = ro + rd * t
                 r = hit.x * hit.x + hit.y * hit.y
                 if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
@@ -401,11 +428,12 @@ class RealisticCamera:
                     # refracted by lens
                     etaI = self.eta[i]
                     etaT = self.eta[i - 1] if i > 0 and self.eta[i - 1] != 0.0 else 1.0   # the outer of 0-th element is air, whose eta is 1.0
-                    rd.normalized()
-                    has_r, d = refract(-rd, n, etaI/etaT)
+                    # rd.normalized()
+                    has_r, d = refract(rd, n, etaI/etaT)
+                    print('rd, ', rd, n, d)
                     if not has_r:
                         ok = False
                         break
-                    rd = ti.Vector([d.x, d.y, -d.z])
+                    rd = ti.Vector([d.x, d.y, d.z])
 
-        return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z])
+        return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z]).normalized()
