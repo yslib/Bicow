@@ -21,7 +21,7 @@ def run():
         tf = -o1.x / d1.x
         tf2 = -o2.x / d2.x
         #print(ok1, (o1 + tf * d1).z, o1, d1, tf)
-        print(ok2, (o2 + tf2 * d2).z, o2, d2, tf2)
+        #print(ok2, (o2 + tf2 * d2).z, o2, d2, tf2)
 
     fz1,pz1, fz2, pz2 = cam.compute_thick_lens_approximation()
     print('fz1, pz1, fz2, pz2: ', fz1, pz1, fz2, pz2)

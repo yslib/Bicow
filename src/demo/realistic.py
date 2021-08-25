@@ -2,7 +2,7 @@ import taichi as ti
 import numpy as np
 from renderer_utils import refract, intersect_sphere
 
-elements_count = 13
+elements_count = 11
 pupil_interval_count = 64
 eps = 1e-5
 inf = 9999999.0
@@ -135,7 +135,7 @@ class RealisticCamera:
             [-20.378,5.008,1.0,14.8]
         ]
 
-        a = np.array(wide22).transpose()
+        a = np.array(dgauss50).transpose()
         self.curvatureRadius.from_numpy(a[0])
         self.thickness.from_numpy(a[1])
         self.eta.from_numpy(a[2])
@@ -335,7 +335,7 @@ class RealisticCamera:
                 ok = False
             if ok:
                 n = (o + t * rd).normalized()
-                n = -n if n.dot(rd) <0.0 else n
+                n = -n if n.dot(-rd) <0.0 else n
 
         return ok, t, n
 
@@ -411,7 +411,6 @@ class RealisticCamera:
                     centerZ = elemZ + radius
                     isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
                     if not isect:
-                        # print(centerZ, radius, ro ,rd, t, n)
                         ok = False
                         break
 
@@ -430,7 +429,6 @@ class RealisticCamera:
                     etaT = self.eta[i - 1] if i > 0 and self.eta[i - 1] != 0.0 else 1.0   # the outer of 0-th element is air, whose eta is 1.0
                     # rd.normalized()
                     has_r, d = refract(rd, n, etaI/etaT)
-                    print('rd, ', rd, n, d)
                     if not has_r:
                         ok = False
                         break
