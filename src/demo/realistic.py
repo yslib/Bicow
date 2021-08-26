@@ -2,7 +2,7 @@ import taichi as ti
 import numpy as np
 from renderer_utils import refract, intersect_sphere
 
-elements_count = 11
+elements_count = 7
 pupil_interval_count = 64
 eps = 1e-5
 inf = 9999999.0
@@ -25,7 +25,7 @@ def inside_aabb(bmin, bmax, pos):
     return all(bmin <= pos) and all(pos <= bmax)
 
 @ti.func
-def reverse_bits32(n):
+def reverse_bits32(n:ti.i32):
     n = (n << 16) | (n >> 16)
     n = ((n & 0x00ff00ff) << 8) | ((n & 0xff00ff00) >> 8)
     n = ((n & 0x0f0f0f0f) << 4) | ((n & 0xf0f0f0f0) >> 4)
@@ -34,17 +34,18 @@ def reverse_bits32(n):
     return n
 
 @ti.func
-def reverse_bits64(n):
-    n0 = reverse_bits32(n)
-    n1 = reverse_bits32(n >> 32)
-    return (n0 << 32) | n1
+def reverse_bits64(n:ti.i64):
+    n0 = reverse_bits32(ti.cast(n, ti.i32))
+    n1 = reverse_bits32(ti.cast(n>>32,ti.i32))
+    return ti.cast((n0 << 32),ti.i64) | ti.cast(n1,ti.i64)
 
 @ti.func
-def radical_inverse_2(value):
-    return reverse_bits64(value) * (1.0/(2^64))
+def radical_inverse_2(value:ti.i64):
+    inv = 1.0 / 2**64
+    return ti.cast(reverse_bits64(value),ti.f64) * inv
 
 @ti.func
-def radical_inverse_3(value):
+def radical_inverse_3(value:ti.i64):
     inv_base = 1.0/3.0
     reversed = 0
     n = 1.0
@@ -66,12 +67,12 @@ class RealisticCamera:
         self.thickness = ti.field(ti.f32)
         self.eta = ti.field(ti.f32)
         self.aperture = ti.field(ti.f32)
-        self.exitPupilBoundMin = ti.Vector.field(3, dtype=ti.f32)
-        self.exitPupilBoundMax = ti.Vector.field(3, dtype=ti.f32)
+        self.exitPupilBoundMin = ti.Vector.field(2, dtype=ti.f32)
+        self.exitPupilBoundMax = ti.Vector.field(2, dtype=ti.f32)
         self.film_diagnal = 35.00
         self.shutter = 0.01
 
-        self.camera2world = ti.Matrix.field(4,4,dtype=ti.f32)
+        self.camera2world = ti.Matrix([[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0]])
         self.up = up
         self.front = front
 
@@ -83,17 +84,16 @@ class RealisticCamera:
         ti.root.place(self.camera_pos)
         ti.root.place(self.aspect_ratio)
         ti.root.place(self.lens_z)
-        ti.root.place(self.camera2world)
 
         self.aspect_ratio[None] = float(res[0])/res[1]
         self.res = ti.Vector([400, 400])
         self.camera_pos = ti.Vector([*camera_pos])
 
         self.load_lens_data()
-        self.init_transform()
 
+    @ti.func
     def init_transform(self):
-        self.camera2world.from_numpy(np.array([[1,1,1,1],[1,1,1,1],[1,1,1,1],[1,1,1,1]]))
+        self.camera2world = ti.Matrix.cols([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]])
 
     def load_lens_data(self):
         wide22 = [
@@ -134,8 +134,18 @@ class RealisticCamera:
             [19.813,1.502,1.603,13.4],
             [-20.378,5.008,1.0,14.8]
         ]
+        telephoto250=[
+            [54.6275,12.52,1.529,47.5],
+            [-86.365,3.755,1.599,44.5],
+            [271.7625,2.8175,1,41.5],
+            [0,67.4125,0,40.5],
+            [-32.13,3.755,1.613,31.5],
+            [49.5325,12.52,1.603,33.5],
+            [-50.945,0,1,37]
+        ]
 
-        a = np.array(dgauss50).transpose()
+        lenses = telephoto250
+        a = np.array(lenses).transpose()
         self.curvatureRadius.from_numpy(a[0])
         self.thickness.from_numpy(a[1])
         self.eta.from_numpy(a[2])
@@ -144,8 +154,8 @@ class RealisticCamera:
 
     @ti.func
     def camera_2_world(self, o, d):
-        wo = self.camera2world @ ti.Vector([o.x,o.y,o.z, 1.0])
-        wd = self.camera2world @ ti.Vector([d.x,d.y,d.z, 1.0])
+        wo = self.camera2world @ ti.Vector([o.x, o.y, o.z, 1.0])
+        wd = self.camera2world @ ti.Vector([d.x, d.y, d.z, 1.0])
         return ti.Vector([wo.x,wo.y,wo.z]), ti.Vector([wd.x,wd.y,wd.z])
 
     @ti.func
@@ -161,7 +171,7 @@ class RealisticCamera:
 
     @ti.func
     def rear_radius(self):
-        return self.curvatureRadius[elements_count - 1]
+        return self.curvatureRadius[self.curvatureRadius.shape[0] - 1]
 
     @ti.func
     def recompute_exit_pupil(self):
@@ -169,24 +179,31 @@ class RealisticCamera:
         pre-process exit pupil of the lens system
         """
 
-        rearRadius = self.curvatureRadius[elements_count - 1]
+        rearRadius = self.rear_radius()
         rearZ = self.rear_z()
         count = 0
         samples = 1024 * 1024
         half = 1.5 * rearRadius
         proj_bmin, proj_bmax = ti.Vector([-half, half]), ti.Vector([-half, half])
         for i in range(pupil_interval_count):
-            r0 = ti.cast(i, ti.float) / pupil_interval_count * self.film_diagnal / 2.0
-            r1 = ti.cast(i + 1, ti.float) / pupil_interval_count * self.film_diagnal / 2.0
+            r0 = ti.cast(i, ti.f32) / pupil_interval_count * self.film_diagnal / 2.0
+            r1 = ti.cast(i + 1, ti.f32) / pupil_interval_count * self.film_diagnal / 2.0
 
             bmin, bmax = make_bound2()
             for j in range(samples):
-                u, v = radical_inverse_2(j), radical_inverse_3(j)
+                # u, v = radical_inverse_2(j), radical_inverse_3(j)
+                u, v= ti.random(), ti.random()
                 film_pos = ti.Vector([lerp(ti.cast(j, ti.f32), r0, r1), 0.0, 0.0])
-                lens_pos = ti.Vector([lerp(u,-half,half),lerp(v,-half, half), rearZ])
-                if inside_aabb(bmin, bmax, lens_pos) or self.gen_ray_from_film(film_pos,(lens_pos - film_pos).normalized()):
-                    bmin,bmax = bound_union_with(bmin,bmax,ti.Vector([lens_pos.x, lens_pos.y]))
+                x, y = lerp(u, -half, half), lerp(v, -half, half)
+                lens_pos = ti.Vector([x, y, rearZ])
+                if inside_aabb(bmin, bmax, ti.Vector([x, y])):
+                    bmin, bmax = bound_union_with(bmin,bmax, ti.Vector([x, y]))
                     count += 1
+                else:
+                    ok, _, _ = self.gen_ray_from_film(film_pos, (lens_pos - film_pos).normalized())
+                    if ok:
+                        bmin, bmax = bound_union_with(bmin,bmax, ti.Vector([x, y]))
+                        count += 1
 
             if count == 0:
                 bmin, bmax = proj_bmin, proj_bmax
@@ -209,7 +226,7 @@ class RealisticCamera:
         assert uv >= 0.0 and uv <= 1.0
 
         r = film_pos.norm()
-        index = ti.min(r / self.film_diagnal * 2.0 * pupil_interval_count, pupil_interval_count - 1)
+        index = ti.cast(ti.min(r / self.film_diagnal * 2.0 * pupil_interval_count, pupil_interval_count - 1), ti.i32)
         bmin, bmax = self.exitPupilBoundMin[index], self.exitPupilBoundMax[index]
         area = (bmax - bmin).dot(ti.Vector([1.0, 1.0]))
         sampled = lerp(uv, bmin, bmax)
@@ -225,12 +242,12 @@ class RealisticCamera:
     @ti.func
     def gen_ray(self, film_uv, lens_uv):
         extent = ti.Vector(
-            [ti.static(self.res[0], ti.f32),
-            ti.static(self.res[1], ti.f32)]
+            [ti.cast(self.res.x, ti.f32),
+            ti.cast(self.res.y, ti.f32)]
          )
-        film_pos = lerp(film_uv, ti.Vector([0.0,0.0]), extent)
-        film_pos = film_pos - extent / 2.0
-        lens_pos, area = self.sample_exit_pupil(film_pos, lens_uv)
+        film_pos_xy = lerp(film_uv, ti.Vector([0.0,0.0]), extent)
+        film_pos_xy = film_pos_xy - extent / 2.0
+        lens_pos, area = self.sample_exit_pupil(film_pos_xy, lens_uv)
         film_pos = ti.Vector([extent.x, extent.y, 0.0])
         o, d = film_pos, lens_pos - film_pos
         exit, out_o ,out_d = self.gen_ray_from_film(o, d)
@@ -290,7 +307,11 @@ class RealisticCamera:
         assert f > 0
         z = -focus_distance
         delta = 0.5 * (pz2 - z + pz1 - ti.sqrt((pz2 - z - pz1)*(pz2-z-4*f-pz1) ))
-        return self.thickness[self.thickness.n - 1] + delta
+        return self.thickness[self.thickness.shape[0] - 1] + delta
+
+    @ti.func
+    def refocus(self, focus_distance):
+        self.thickness[self.thickness.shape[0] - 1] = self.focus_thick_camera(focus_distance)
 
     @ti.func
     def intersect_with_sphere(self,
@@ -335,7 +356,7 @@ class RealisticCamera:
                 ok = False
             if ok:
                 n = (o + t * rd).normalized()
-                n = -n if n.dot(-rd) <0.0 else n
+                n = -n if n.dot(-rd) < 0.0 else n
 
         return ok, t, n
 
