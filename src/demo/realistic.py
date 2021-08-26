@@ -59,9 +59,8 @@ def radical_inverse_3(value:ti.i64):
 
 @ti.data_oriented
 class RealisticCamera:
-    def __init__(self, res, camera_pos, up, front):
+    def __init__(self, res, camera_pos, center, world_up):
         self.camera_pos = ti.Vector.field(3, ti.f32)
-        self.aspect_ratio = ti.field(ti.f32)
         self.res = ti.Vector.field(2, ti.i32)
         self.curvatureRadius = ti.field(ti.f32)
         self.thickness = ti.field(ti.f32)
@@ -72,28 +71,44 @@ class RealisticCamera:
         self.film_diagnal = 35.00
         self.shutter = 0.01
 
-        self.camera2world = ti.Matrix([[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0]])
-        self.up = up
-        self.front = front
+        self.camera2world = ti.Matrix([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]])
 
-        self.lens_z = ti.field(ti.f32)
 
         ti.root.dense(ti.i, (elements_count, )).place(self.curvatureRadius, self.thickness, self.eta, self.aperture)
         ti.root.dense(ti.i, (pupil_interval_count, )).place(self.exitPupilBoundMin, self.exitPupilBoundMax)
         ti.root.place(self.res)
         ti.root.place(self.camera_pos)
-        ti.root.place(self.aspect_ratio)
-        ti.root.place(self.lens_z)
 
-        self.aspect_ratio[None] = float(res[0])/res[1]
         self.res = ti.Vector([400, 400])
         self.camera_pos = ti.Vector([*camera_pos])
 
         self.load_lens_data()
+        self.set_camera(camera_pos, center, world_up)
 
-    @ti.func
-    def init_transform(self):
-        self.camera2world = ti.Matrix.cols([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]])
+    def set_camera(self, eye, center, world_up):
+        """
+        setup camera2world transformation
+        """
+
+        self.camera_pos[0] , self.camera_pos[1], self.camera_pos[2] = eye[0], eye[1], eye[2]
+        def cross(v1, v2):
+            return (-v2[1] * v1[2] + v1[1] * v2[2], v2[0]*v1[2] - v1[0] * v2[2], - v2[0] * v1[1] + v1[0] * v2[1])
+
+        def normalize(v):
+            import math
+            s = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+            if abs(s) < eps:
+                return [0.0,0.0,0.0]
+            return [v[0]/s,v[1]/s, v[2]/s]
+
+        direction = normalize([center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]])
+        right = normalize(cross(world_up, direction))
+        up = normalize(cross(right, direction))
+        self.camera2world = ti.Matrix([
+            [right[0],up[0],-direction[0], eye[0]],
+            [right[1],up[1],-direction[1], eye[1]],
+            [right[2],up[2],-direction[2], eye[2]],
+            [0.0,0.0,0.0,1.0]])
 
     def load_lens_data(self):
         wide22 = [
@@ -229,6 +244,7 @@ class RealisticCamera:
         index = ti.cast(ti.min(r / self.film_diagnal * 2.0 * pupil_interval_count, pupil_interval_count - 1), ti.i32)
         bmin, bmax = self.exitPupilBoundMin[index], self.exitPupilBoundMax[index]
         area = (bmax - bmin).dot(ti.Vector([1.0, 1.0]))
+        print(bmin, bmax)
         sampled = lerp(uv, bmin, bmax)
         sint = film_pos.y / r if abs(r) < eps else 0.0
         cost = film_pos.x / r if abs(r) < eps else 0.0
@@ -248,8 +264,10 @@ class RealisticCamera:
         film_pos_xy = lerp(film_uv, ti.Vector([0.0,0.0]), extent)
         film_pos_xy = film_pos_xy - extent / 2.0
         lens_pos, area = self.sample_exit_pupil(film_pos_xy, lens_uv)
-        film_pos = ti.Vector([extent.x, extent.y, 0.0])
+        # print('lens_pos: ', lens_pos, 'area: ', area)
+        film_pos = ti.Vector([film_pos_xy.x, film_pos_xy.y, 0.0])
         o, d = film_pos, lens_pos - film_pos
+        # print('film pos: ', o,'dir:', d)
         exit, out_o ,out_d = self.gen_ray_from_film(o, d)
         cost = out_d.z
         weight = cost
@@ -257,7 +275,8 @@ class RealisticCamera:
             cos4t = cost * cost * cost * cost
             weight = self.shutter * cos4t * area /(self.rear_z() * self.rear_z())
         # translate the ray from cameray space into world space
-        return self.camera_2_world(out_o, out_d), weight
+
+        return exit, self.camera_2_world(out_o, out_d), weight
 
 
     @ti.func

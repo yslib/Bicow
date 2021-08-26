@@ -1,10 +1,19 @@
 import numpy as np
 import taichi as ti
-from taichi.lang.impl import call_internal
 from realistic import RealisticCamera
 ti.init(excepthook=True, arch=ti.gpu)
 
-cam = RealisticCamera((400,400), [0.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0])
+cam = RealisticCamera((400,400), [10000.0,10000.0,10000.0],[0.0,0.0,0.0],[0.0,1.0,0.0])
+
+
+pos = [10.0,10.0,10.0 ,1.0]
+center = [0.0,0.0,0.0, 1.0]
+up = [0.0,1.0, 0.0,1.0]
+
+
+v = ti.Vector([0.0,0.0,0.0,0.0])
+v = ti.Vector([*pos])
+matr = ti.Matrix([pos,pos,pos,pos])
 
 @ti.kernel
 def test_focal_length():
@@ -26,24 +35,19 @@ def test_focal_length():
     print('fz1, pz1, fz2, pz2: ', fz1, pz1, fz2, pz2)
     print('first focal length, second focal length', cam.get_focal_length())
 
-
-
-
-
-
 @ti.kernel
 def test_pupils():
     cam.refocus(1200)
     cam.recompute_exit_pupil()
-
 
 # test_pupils()
 
 @ti.kernel
 def gen_ray_test():
     # cam.sample_exit_pupil(ti.Vector([0.0,1.0]), 0.5)
-    cam.gen_ray(ti.Vector([0.5, 0.5]), 0.5)
+    cam.recompute_exit_pupil()
+    cam.refocus(10000)
+    for i in range(1000):
+        exit, ray, weight = cam.gen_ray(ti.Vector([ti.random(), ti.random()]), ti.random())
 
 gen_ray_test()
-
-
