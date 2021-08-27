@@ -1,10 +1,13 @@
 import numpy as np
 import taichi as ti
 from realistic import RealisticCamera
-ti.init(excepthook=True, arch=ti.gpu)
+ti.init(arch=ti.gpu)
 
-cam = RealisticCamera((400,400), [10000.0,10000.0,10000.0],[0.0,0.0,0.0],[0.0,1.0,0.0])
-
+pos = [10000.0,10000.0,10000.0]   # mm
+center = [0.0,0.0,0.0]
+world_up = [0.0,1.0,0.0]
+resolution = [400, 400]
+cam = RealisticCamera(resolution, pos, center, world_up)
 
 pos = [10.0,10.0,10.0 ,1.0]
 center = [0.0,0.0,0.0, 1.0]
@@ -42,12 +45,16 @@ def test_pupils():
 
 # test_pupils()
 
+cam.refocus(10000.0)
+cam.recompute_exit_pupil()
+
 @ti.kernel
 def gen_ray_test():
-    # cam.sample_exit_pupil(ti.Vector([0.0,1.0]), 0.5)
-    cam.recompute_exit_pupil()
-    cam.refocus(10000)
-    for i in range(1000):
-        exit, ray, weight = cam.gen_ray(ti.Vector([ti.random(), ti.random()]), ti.random())
+    cam.vignet[None] = 0
+    for i in range(600):
+        for j in range(400):
+            weight, ray = cam.gen_ray_of(i, j)
+            if weight > 0.0:
+                print(i, j)
 
 gen_ray_test()

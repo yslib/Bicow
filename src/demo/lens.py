@@ -1,11 +1,10 @@
 import sys
-from numpy.lib.function_base import select
-sys.path.append('.')
 import taichi as ti
 import time
 import math
 import numpy as np
 from renderer_utils import ray_aabb_intersection, intersect_sphere, ray_plane_intersect, reflect, refract
+from realistic import RealisticCamera
 
 @ti.data_oriented
 class Camera:
@@ -15,21 +14,13 @@ class Camera:
         self.camera_pos = ti.Vector.field(3, ti.f32)
         self.aspect_ratio = ti.field(ti.f32)
         self.res = ti.Vector.field(2, ti.i32)
-        self.curvatureRadius = ti.field(ti.f32)
-        self.thickness = ti.field(ti.f32)
-        self.eta = ti.field(ti.f32)
-        self.aperture = ti.field(ti.f32)
         self.count_var = ti.field(ti.i32)
 
-        self.lens_z = ti.field(ti.f32)
-
-        ti.root.dense(ti.i, (self.n, )).place(self.curvatureRadius, self.thickness, self.eta, self.aperture)
         ti.root.place(self.res)
         ti.root.place(self.camera_pos)
         ti.root.place(self.aspect_ratio)
         ti.root.place(self.fov)
         ti.root.place(self.count_var)
-        ti.root.place(self.lens_z)
 
         self.aspect_ratio[None] = float(res[0])/res[1]
         self.res = ti.Vector([400, 400])
@@ -39,7 +30,6 @@ class Camera:
         self.stratify_res = 5
         self.inv_stratify = 1.0 / 5.0
         self.count_var[None] = 0
-        self.loaded = False
 
     @ti.func
     def gen_ray(self, u:ti.template(), v:ti.template()):
@@ -62,7 +52,7 @@ class Camera:
 
 
 ti.init(arch=ti.gpu)
-res = (400, 400)
+res = (600, 400)
 color_buffer = ti.Vector.field(3, dtype=ti.f32, shape=res)
 count_var = ti.field(ti.i32, shape=(1, ))
 
@@ -106,7 +96,13 @@ sp2_center = ti.Vector([-0.28, 0.55, 0.8])
 sp2_radius = 0.32
 
 
-cam = Camera((400, 400), (0.0, 0.6, 3.0),0.8)
+cam = Camera((600, 400), (0.0, 0.6, 3.0),0.8)
+
+pos = [0.0, 600, 3000]   # mm
+center = [0.0, 0.0, 0.0]
+world_up = [0.0, 1.0, 0.0]
+resolution = [600, 400]
+real_cam = RealisticCamera(resolution, pos, center, world_up)
 
 def make_box_transform_matrices():
     rad = math.pi / 8.0
@@ -460,8 +456,15 @@ inv_stratify = 1.0 / 5.0
 @ti.kernel
 def render():
     for u, v in color_buffer:
-        ray_dir = cam.gen_ray(u, v)
-        pos = camera_pos
+        #  ray_dir = cam.gen_ray(u, v)
+        #  pos = camera_pos
+        weight, r= real_cam.gen_ray_of(u, v)
+        if weight <= 0.0:
+            continue
+        ray_dir = r[1]
+        pos = r[0] / 1000.0
+        # print(pos, ray_dir)
+
         acc_color = ti.Vector([0.0, 0.0, 0.0])
         throughput = ti.Vector([1.0, 1.0, 1.0])
         depth = 0
@@ -495,6 +498,10 @@ def render():
 gui = ti.GUI('Realistic camera', res)
 last_t = time.time()
 i = 0
+
+real_cam.refocus(5000.0)
+real_cam.recompute_exit_pupil()
+
 while gui.running:
     render()
     interval = 10
