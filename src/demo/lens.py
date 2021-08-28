@@ -61,7 +61,7 @@ eps = 1e-4
 inf = 1e10
 fov = 0.8
 
-camera_pos = ti.Vector([0.0, 0.6, 3.0])
+camera_pos = ti.Vector([0.0, 1.8, 10.0])
 
 mat_none = 0
 mat_lambertian = 1
@@ -69,10 +69,10 @@ mat_specular = 2
 mat_glass = 3
 mat_light = 4
 
-light_y_pos = 2.0 - eps
+light_y_pos = 10.0 - eps
 light_x_min_pos = -0.25
 light_x_range = 0.5
-light_z_min_pos = 1.0
+light_z_min_pos = 1.5
 light_z_range = 0.12
 light_area = light_x_range * light_z_range
 light_min_pos = ti.Vector([light_x_min_pos, light_y_pos, light_z_min_pos])
@@ -89,18 +89,18 @@ lambertian_brdf = 1.0 / math.pi
 refr_idx = 2.4
 
 # right near sphere
-sp1_center = ti.Vector([0.4, 0.225, 1.75])
-sp1_radius = 0.22
+sp1_center = ti.Vector([2.0, 2.25, 5.5])
+sp1_radius = 1.0
 # left far sphere
 sp2_center = ti.Vector([-0.28, 0.55, 0.8])
 sp2_radius = 0.32
 
 
-cam = Camera((600, 400), (0.0, 0.6, 3.0),0.8)
+cam = Camera((600, 400), (0.0, 0.6, -3.0),0.8)
 
-pos = [0.0, 600, 3000]   # mm
-center = [0.0, 0.0, 0.0]
-world_up = [0.0, 1.0, 0.0]
+pos = [0, 1800, 10000]   # mm
+center = [0.0,0.0,0.0]
+world_up = [0.0, 2.0, 0.0]
 resolution = [600, 400]
 real_cam = RealisticCamera(resolution, pos, center, world_up)
 
@@ -121,8 +121,8 @@ def make_box_transform_matrices():
 
 
 # left box
-box_min = ti.Vector([0.0, 0.0, 0.0])
-box_max = ti.Vector([0.55, 1.1, 0.55])
+box_min = ti.Vector([-2.0, -0.5, 1.0])
+box_max = ti.Vector([0.0, 5.0, 2.50])
 box_m_inv, box_m_inv_t = make_box_transform_matrices()
 
 
@@ -232,7 +232,7 @@ def intersect_scene(pos, ray_dir):
 
     # left
     pnorm = ti.Vector([1.0, 0.0, 0.0])
-    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([-1.1, 0.0,
+    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([-10.1, 0.0,
                                                                0.0]), pnorm)
     if 0 < cur_dist < closest:
         closest = cur_dist
@@ -240,7 +240,7 @@ def intersect_scene(pos, ray_dir):
         c, mat = ti.Vector([0.65, 0.05, 0.05]), mat_lambertian
     # right
     pnorm = ti.Vector([-1.0, 0.0, 0.0])
-    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([1.1, 0.0, 0.0]),
+    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([10.0, 0.0, 0.0]),
                                       pnorm)
     if 0 < cur_dist < closest:
         closest = cur_dist
@@ -249,7 +249,7 @@ def intersect_scene(pos, ray_dir):
     # bottom
     gray = ti.Vector([0.93, 0.93, 0.93])
     pnorm = ti.Vector([0.0, 1.0, 0.0])
-    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([0.0, 0.0, 0.0]),
+    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([0.0, -1.0, 0.0]),
                                       pnorm)
     if 0 < cur_dist < closest:
         closest = cur_dist
@@ -257,7 +257,7 @@ def intersect_scene(pos, ray_dir):
         c, mat = gray, mat_lambertian
     # top
     pnorm = ti.Vector([0.0, -1.0, 0.0])
-    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([0.0, 2.0, 0.0]),
+    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([0.0, 20.0, 0.0]),
                                       pnorm)
     if 0 < cur_dist < closest:
         closest = cur_dist
@@ -456,14 +456,14 @@ inv_stratify = 1.0 / 5.0
 @ti.kernel
 def render():
     for u, v in color_buffer:
-        #  ray_dir = cam.gen_ray(u, v)
-        #  pos = camera_pos
-        weight, r= real_cam.gen_ray_of(u, v)
-        if weight <= 0.0:
+        # ray_dir = cam.gen_ray(u, v)
+        # pos = camera_pos
+        exit, weight, r = real_cam.gen_ray_of(u, v)
+        if not exit:
             continue
-        ray_dir = r[1]
-        pos = r[0] / 1000.0
-        # print(pos, ray_dir)
+        ray_dir = ti.Vector([r[1].x,r[1].y, r[1].z])
+        pos = r[0]/1000.0
+        # print(u, v)
 
         acc_color = ti.Vector([0.0, 0.0, 0.0])
         throughput = ti.Vector([1.0, 1.0, 1.0])
@@ -499,7 +499,7 @@ gui = ti.GUI('Realistic camera', res)
 last_t = time.time()
 i = 0
 
-real_cam.refocus(5000.0)
+real_cam.refocus(3000.0)
 real_cam.recompute_exit_pupil()
 
 while gui.running:
