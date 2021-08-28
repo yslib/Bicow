@@ -8,16 +8,14 @@ from realistic import RealisticCamera
 
 @ti.data_oriented
 class Camera:
-    def __init__(self, res, camera_pos, fov):
+    def __init__(self, res, fov):
         self.n = 10
         self.fov = ti.field(ti.f32)
-        self.camera_pos = ti.Vector.field(3, ti.f32)
         self.aspect_ratio = ti.field(ti.f32)
         self.res = ti.Vector.field(2, ti.i32)
         self.count_var = ti.field(ti.i32)
 
         ti.root.place(self.res)
-        ti.root.place(self.camera_pos)
         ti.root.place(self.aspect_ratio)
         ti.root.place(self.fov)
         ti.root.place(self.count_var)
@@ -25,7 +23,6 @@ class Camera:
         self.aspect_ratio[None] = float(res[0])/res[1]
         self.res = ti.Vector([400, 400])
         self.fov[None] = fov
-        self.camera_pos = ti.Vector([*camera_pos])
 
         self.stratify_res = 5
         self.inv_stratify = 1.0 / 5.0
@@ -33,7 +30,6 @@ class Camera:
 
     @ti.func
     def gen_ray(self, u:ti.template(), v:ti.template()):
-        pos = self.camera_pos
         cur_iter = self.count_var[None]
         str_x, str_y = (cur_iter / self.stratify_res), (cur_iter % self.stratify_res)
         ray_dir = ti.Vector([
@@ -69,11 +65,11 @@ mat_specular = 2
 mat_glass = 3
 mat_light = 4
 
-light_y_pos = 10.0 - eps
+light_y_pos = 30.0 - eps
 light_x_min_pos = -0.25
-light_x_range = 0.5
-light_z_min_pos = 1.5
-light_z_range = 0.12
+light_x_range = 5
+light_z_min_pos = 100.0
+light_z_range = 12
 light_area = light_x_range * light_z_range
 light_min_pos = ti.Vector([light_x_min_pos, light_y_pos, light_z_min_pos])
 light_max_pos = ti.Vector([
@@ -89,23 +85,23 @@ lambertian_brdf = 1.0 / math.pi
 refr_idx = 2.4
 
 # right near sphere
-sp1_center = ti.Vector([2.0, 2.25, 5.5])
-sp1_radius = 1.0
+sp1 = [0.0, 2.0, 225.0]
+sp1_center = ti.Vector(sp1)
+sp1_radius = 2.0
 # left far sphere
 sp2_center = ti.Vector([-0.28, 0.55, 0.8])
 sp2_radius = 0.32
 
 
-cam = Camera((600, 400), (0.0, 0.6, -3.0),0.8)
+cam = Camera((600, 400), 0.8)
 
-pos = [0, 1800, 10000]   # mm
+pos = [0.0, 3.0, 240.0]   # mm
 center = [0.0,0.0,0.0]
-world_up = [0.0, 2.0, 0.0]
-resolution = [600, 400]
-real_cam = RealisticCamera(resolution, pos, center, world_up)
+world_up = [0.0, 1.0, 0.0]
+real_cam = RealisticCamera(pos, center, world_up)
 
 def make_box_transform_matrices():
-    rad = math.pi / 8.0
+    rad = math.pi / 10.0
     c, s = math.cos(rad), math.sin(rad)
     rot = np.array([[c, 0, s, 0], [0, 1, 0, 0], [-s, 0, c, 0], [0, 0, 0, 1]])
     translate = np.array([
@@ -121,8 +117,8 @@ def make_box_transform_matrices():
 
 
 # left box
-box_min = ti.Vector([-2.0, -0.5, 1.0])
-box_max = ti.Vector([0.0, 5.0, 2.50])
+box_min = ti.Vector([-4.0, -1.0, 15.0])
+box_max = ti.Vector([4.0, 30.0, 25.00])
 box_m_inv, box_m_inv_t = make_box_transform_matrices()
 
 
@@ -232,7 +228,7 @@ def intersect_scene(pos, ray_dir):
 
     # left
     pnorm = ti.Vector([1.0, 0.0, 0.0])
-    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([-10.1, 0.0,
+    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([-40.0, 0.0,
                                                                0.0]), pnorm)
     if 0 < cur_dist < closest:
         closest = cur_dist
@@ -240,7 +236,7 @@ def intersect_scene(pos, ray_dir):
         c, mat = ti.Vector([0.65, 0.05, 0.05]), mat_lambertian
     # right
     pnorm = ti.Vector([-1.0, 0.0, 0.0])
-    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([10.0, 0.0, 0.0]),
+    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([40.0, 0.0, 0.0]),
                                       pnorm)
     if 0 < cur_dist < closest:
         closest = cur_dist
@@ -257,7 +253,7 @@ def intersect_scene(pos, ray_dir):
         c, mat = gray, mat_lambertian
     # top
     pnorm = ti.Vector([0.0, -1.0, 0.0])
-    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([0.0, 20.0, 0.0]),
+    cur_dist, _ = ray_plane_intersect(pos, ray_dir, ti.Vector([0.0, 30.0, 0.0]),
                                       pnorm)
     if 0 < cur_dist < closest:
         closest = cur_dist
@@ -456,14 +452,11 @@ inv_stratify = 1.0 / 5.0
 @ti.kernel
 def render():
     for u, v in color_buffer:
-        # ray_dir = cam.gen_ray(u, v)
-        # pos = camera_pos
-        exit, weight, r = real_cam.gen_ray_of(u, v)
-        if not exit:
+        weight, r = real_cam.gen_ray_of(u, v)
+        if weight <= 0.0:
             continue
-        ray_dir = ti.Vector([r[1].x,r[1].y, r[1].z])
-        pos = r[0]/1000.0
-        # print(u, v)
+        ray_dir = r[1]
+        pos = r[0]
 
         acc_color = ti.Vector([0.0, 0.0, 0.0])
         throughput = ti.Vector([1.0, 1.0, 1.0])
@@ -490,21 +483,20 @@ def render():
                     hit_normal, ray_dir) / pdf
             else:
                 throughput *= hit_color
-        color_buffer[u, v] += acc_color
-    count_var[0] = (count_var[0] + 1) % (stratify_res * stratify_res)
-    cam.count_add()
+        color_buffer[u, v] += weight*acc_color
 
 
 gui = ti.GUI('Realistic camera', res)
 last_t = time.time()
 i = 0
 
-real_cam.refocus(3000.0)
+real_cam.refocus(3)
+# real_cam.refocus(np.linalg.norm(np.array(sp1) - real_cam.get_position()))
 real_cam.recompute_exit_pupil()
 
 while gui.running:
     render()
-    interval = 10
+    interval = 1000
     if i % interval == 0 and i > 0:
         img = color_buffer.to_numpy() * (1 / (i + 1))
         img = np.sqrt(img / img.mean() * 0.24)

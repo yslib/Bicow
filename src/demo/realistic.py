@@ -4,10 +4,10 @@ import numpy as np
 from renderer_utils import refract, intersect_sphere
 
 elements_count = 11
+
 pupil_interval_count = 64
 eps = 1e-5
 inf = 9999999.0
-
 
 @ti.func
 def lerp(val, begin ,end):
@@ -25,43 +25,9 @@ def make_bound2():
 def inside_aabb(bmin, bmax, pos):
     return all(bmin <= pos) and all(pos <= bmax)
 
-@ti.func
-def reverse_bits32(n:ti.i32):
-    n = (n << 16) | (n >> 16)
-    n = ((n & 0x00ff00ff) << 8) | ((n & 0xff00ff00) >> 8)
-    n = ((n & 0x0f0f0f0f) << 4) | ((n & 0xf0f0f0f0) >> 4)
-    n = ((n & 0x33333333) << 2) | ((n & 0xcccccccc) >> 2)
-    n = ((n & 0x55555555) << 1) | ((n & 0xaaaaaaaa) >> 1)
-    return n
-
-@ti.func
-def reverse_bits64(n:ti.i64):
-    n0 = reverse_bits32(ti.cast(n, ti.i32))
-    n1 = reverse_bits32(ti.cast(n>>32,ti.i32))
-    return ti.cast((n0 << 32),ti.i64) | ti.cast(n1,ti.i64)
-
-@ti.func
-def radical_inverse_2(value:ti.i64):
-    inv = 1.0 / 2**64
-    return ti.cast(reverse_bits64(value),ti.f64) * inv
-
-@ti.func
-def radical_inverse_3(value:ti.i64):
-    inv_base = 1.0/3.0
-    reversed = 0
-    n = 1.0
-    while value != 0:
-        next = value / 3
-        _digit = value - next * 3
-        reversed = reversed * 3 + _digit
-        n *= inv_base
-        value = next
-    return reversed * n
-
 @ti.data_oriented
 class RealisticCamera:
-    def __init__(self, res, camera_pos, center, world_up):
-        self.camera_pos = ti.Vector.field(3, ti.f32)
+    def __init__(self, camera_pos, center, world_up):
         self.vignet = ti.field(ti.i32, shape=())
         self.curvatureRadius = ti.field(ti.f32)
         self.thickness = ti.field(ti.f32)
@@ -69,30 +35,30 @@ class RealisticCamera:
         self.aperture = ti.field(ti.f32)
         self.exitPupilBoundMin = ti.Vector.field(2, dtype=ti.f32)
         self.exitPupilBoundMax = ti.Vector.field(2, dtype=ti.f32)
-        self.camera2world_pos = ti.Matrix([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]])
+        self.camera2world_point = ti.Matrix([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]])
         self.camera2world_vec = ti.Matrix([[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]])
-
 
         ti.root.dense(ti.i, (elements_count, )).place(self.curvatureRadius, self.thickness, self.eta, self.aperture)
         ti.root.dense(ti.i, (pupil_interval_count, )).place(self.exitPupilBoundMin, self.exitPupilBoundMax)
-        ti.root.place(self.camera_pos)
-
-        self.camera_pos = ti.Vector([*camera_pos])
 
         self.shutter = 0.1
         self.film_width = 36
         self.film_height = 24
         self.film_diagnal = math.sqrt(self.film_height * self.film_height + self.film_width * self.film_width)
-        # self.film_width = 13.2
-        # self.film_height = 8.8
-        # self.film_diagnal = 15.8 # full frame diagnal
         self.pixel_width = 600
         self.pixel_height = 400
+        self.camera_pos = np.array(camera_pos)
 
         self.load_lens_data()
-        self.set_camera2world(camera_pos, center, world_up)
+        self.set_camera(camera_pos, center, world_up)
 
-    def set_camera2world(self, eye, center, world_up):
+    def get_resolution(self):
+        return [self.pixel_width, self.pixel_height]
+
+    def get_position(self):
+        return self.camera_pos
+
+    def set_camera(self, eye, center, world_up):
         """
         setup camera2world_pos transformation
         """
@@ -100,7 +66,7 @@ class RealisticCamera:
         center = np.array(center)
         world_up = np.array(world_up)
 
-        self.camera_pos[0] , self.camera_pos[1], self.camera_pos[2] = eye[0], eye[1], eye[2]
+        self.camera_pos = eye
 
         def normalize(v):
             norm = np.linalg.norm(v)
@@ -109,11 +75,16 @@ class RealisticCamera:
         direction = normalize(center - eye)
         right = normalize(np.cross(direction, world_up))
         up = normalize(np.cross(right, direction))
-        # print(right, up, direction)
-        self.camera2world_pos = ti.Matrix([
-            [right[0], up[0], direction[0], eye[0]],
-            [right[1], up[1], direction[1], eye[1]],
-            [right[2], up[2], direction[2], eye[2]],
+
+        self.camera2world_point = ti.Matrix([
+            [1.0/1000.0,0.0,0.0,0.0],
+            [0.0,1.0/1000.0,0.0,0.0],
+            [0.0,0.0,1.0/1000.0,0.0],
+            [0.0,0.0,0.0,1.0]
+        ]) @ ti.Matrix([
+            [right[0], up[0], direction[0], 1000.0 * eye[0]],
+            [right[1], up[1], direction[1], 1000.0 * eye[1]],
+            [right[2], up[2], direction[2], 1000.0 * eye[2]],
             [0.0,0.0,0.0,1.0]])
 
         self.camera2world_vec = ti.Matrix([
@@ -181,7 +152,13 @@ class RealisticCamera:
 
     @ti.func
     def camera_2_world(self, o, d):
-        wo = self.camera2world_pos @ ti.Vector([o.x, o.y, o.z, 1.0])
+        """
+        Transform the ray from camera space to world space
+
+        o: origin of the ray
+        d: direction of the ray
+        """
+        wo = self.camera2world_point @ ti.Vector([o.x, o.y, o.z, 1.0])
         wd = self.camera2world_vec @ d
         return ti.Vector([wo.x,wo.y,wo.z]), wd
 
@@ -215,12 +192,11 @@ class RealisticCamera:
             print('Not focus')
         rearRadius = self.rear_aperture()
         samples = 1024 * 1024
-        half = 1.5 * rearRadius
+        half = 2.0 * rearRadius
         proj_bmin, proj_bmax = ti.Vector([-half, -half]), ti.Vector([half, half])
         for i in range(pupil_interval_count):
             r0 = ti.cast(i, ti.f32) / pupil_interval_count * self.film_diagnal / 2.0
             r1 = ti.cast(i + 1, ti.f32) / pupil_interval_count * self.film_diagnal / 2.0
-
             bmin, bmax = make_bound2()
             count = 0
             for j in range(samples):
@@ -229,7 +205,6 @@ class RealisticCamera:
                 x, y = lerp(u, -half, half), lerp(v, -half, half)
                 lens_pos = ti.Vector([x, y, rearZ])
                 if inside_aabb(bmin, bmax, ti.Vector([x, y])):
-                    # bmin, bmax = bound_union_with(bmin,bmax, ti.Vector([x, y]))
                     ti.atomic_add(count, 1)
                 else:
                     ok, _, _ = self.gen_ray_from_film(film_pos, (lens_pos - film_pos).normalized())
@@ -241,7 +216,7 @@ class RealisticCamera:
                 bmin, bmax = proj_bmin, proj_bmax
 
             # extents pupil bound
-            delta = 2 * (bmax-bmin).norm() / ti.sqrt(samples)
+            delta = 2 * (proj_bmax - proj_bmin).norm() / ti.sqrt(samples)
             bmin -= delta
             bmax += delta
 
@@ -262,8 +237,8 @@ class RealisticCamera:
         bmin, bmax = self.exitPupilBoundMin[index], self.exitPupilBoundMax[index]
         area = (bmax - bmin).dot(ti.Vector([1.0, 1.0]))
         sampled = lerp(uv, bmin, bmax)
-        sint = film_pos.y / r if abs(r) < eps else 0.0
-        cost = film_pos.x / r if abs(r) < eps else 0.0
+        sint = film_pos.y / r if abs(r) >= eps else 0.0
+        cost = film_pos.x / r if abs(r) >= eps else 1.0
         return ti.Vector(
             [
                 cost * sampled.x - sint * sampled.y,
@@ -317,13 +292,9 @@ class RealisticCamera:
 
         film_pos_xy = ti.Vector([film_pos_xy.x - self.film_width/2.0, self.film_height /2.0 - film_pos_xy.y])
         lens_pos, area = self.sample_exit_pupil(film_pos_xy, lens_uv)
-        # half = self.rear_aperture() * 2.0
-        # lens_pos , area = lerp(lens_uv, ti.Vector([-half, -half, self.rear_z()]),ti.Vector([half, half, self.rear_z()])), 1.0
         film_pos = ti.Vector([film_pos_xy.x, film_pos_xy.y, 0.0])
         o, d = film_pos, lens_pos - film_pos
         exit, out_o ,out_d = self.gen_ray_from_film(o, d)
-        # if exit:
-        #     print('px,py:',px - 300, 200 - py, 'o: ',o)
 
         weight = 0.0
         if not exit:
@@ -334,7 +305,7 @@ class RealisticCamera:
             cos4t = cost * cost * cost * cost
             weight = self.shutter * cos4t * area /(self.rear_z() * self.rear_z())
 
-        return exit, weight, self.camera_2_world(out_o, out_d)
+        return weight, self.camera_2_world(out_o, out_d)
 
     @ti.func
     def compute_cardinal_points(self, in_ro, out_ro, out_rd):
@@ -387,8 +358,7 @@ class RealisticCamera:
 
     @ti.kernel
     def refocus(self, focus_distance:ti.f32):
-        self.thickness[self.thickness.shape[0] - 1] = self.focus_thick_camera(focus_distance)
-        print('refocus: ', self.thickness[self.thickness.shape[0] - 1])
+        self.thickness[self.thickness.shape[0] - 1] = self.focus_thick_camera(focus_distance * 1000.0)
 
     @ti.func
     def intersect_with_sphere(self,
