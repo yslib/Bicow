@@ -2,6 +2,8 @@ import sys
 import os
 from typing import Callable, Dict, Any, List, Tuple
 import configparser
+
+from gui.lense_desginer import LenseDesginerWidget
 sys.path.append('..')
 import dearpygui.dearpygui as dpg
 import bicow.bicow as bc
@@ -19,6 +21,7 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 def bind_param_and_event(item:int, param, name, update_callback, type):
     bind_param(item, param,name)
     bind_event(item,update_callback, type)
+
 
 msgqueue = get_msg_queue()
 class App:
@@ -51,7 +54,8 @@ class App:
         self._gui_id_parameter_panel_parent:int = None
         self._gui_id_parameter_panel:int = None
         self._result_image_widget:ImageWidget = None
-        self._image_container_widget:ImageContainer = None
+        self._image_container_widget:ImageContainerWidget = None
+        self._lense_designer_widget:LenseDesginerWidget = None
 
     def _setup_bicow(self):
         bc.bicow_init()
@@ -195,7 +199,7 @@ class App:
                     with dpg.child(width=800) as res_id:
                         # result image
                         self._result_image_widget = ImageWidget(res_id)
-                    with dpg.child(width=200,autosize_x=True) as b:
+                    with dpg.child(width=200, autosize_x=True) as b:
                         self._gui_id_parameter_panel_parent = b
 
 
@@ -243,8 +247,8 @@ class App:
                 with dpg.tab(label="HDR Timelapse"):
                     self._setup_timelapse_tab()
 
-                with dpg.tab(label="Image Inspector"):
-                    pass
+                with dpg.tab(label="Lense Desinger") as id:
+                    self._lense_designer_widget:LenseDesginerWidget = LenseDesginerWidget(id)
 
     def show(self):
         while(dpg.is_dearpygui_running()):
