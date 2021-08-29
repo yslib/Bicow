@@ -48,7 +48,7 @@ class Camera:
 
 
 ti.init(arch=ti.gpu)
-res = (600, 400)
+res = (800, 600)
 color_buffer = ti.Vector.field(3, dtype=ti.f32, shape=res)
 count_var = ti.field(ti.i32, shape=(1, ))
 
@@ -490,19 +490,24 @@ gui = ti.GUI('Realistic camera', res)
 last_t = time.time()
 i = 0
 
-real_cam.refocus(3)
+real_cam.refocus(4.5)
 # real_cam.refocus(np.linalg.norm(np.array(sp1) - real_cam.get_position()))
 real_cam.recompute_exit_pupil()
 
 while gui.running:
     render()
-    interval = 1000
+    interval = 2000
     if i % interval == 0 and i > 0:
         img = color_buffer.to_numpy() * (1 / (i + 1))
         img = np.sqrt(img / img.mean() * 0.24)
+        var = np.var(img)
+        if var < 0.11790:
+            ti.imwrite(img, 'output.png')
+            break
         print("{:.2f} samples/s ({} iters, var={})".format(
-            interval / (time.time() - last_t), i, np.var(img)))
+            interval / (time.time() - last_t), i, var))
         last_t = time.time()
         gui.set_image(img)
         gui.show()
     i += 1
+

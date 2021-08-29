@@ -247,7 +247,7 @@ class App:
                 with dpg.tab(label="HDR Timelapse"):
                     self._setup_timelapse_tab()
 
-                with dpg.tab(label="Lense Desinger") as id:
+                with dpg.tab(label="Lense Designer") as id:
                     self._lense_designer_widget:LenseDesginerWidget = LenseDesginerWidget(id)
 
     def show(self):

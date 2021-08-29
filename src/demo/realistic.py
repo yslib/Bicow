@@ -45,8 +45,8 @@ class RealisticCamera:
         self.film_width = 36
         self.film_height = 24
         self.film_diagnal = math.sqrt(self.film_height * self.film_height + self.film_width * self.film_width)
-        self.pixel_width = 600
-        self.pixel_height = 400
+        self.pixel_width = 800
+        self.pixel_height = 600
         self.camera_pos = np.array(camera_pos)
 
         self.load_lens_data()
