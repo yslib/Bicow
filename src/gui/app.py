@@ -3,7 +3,6 @@ import os
 from typing import Callable, Dict, Any, List, Tuple
 import configparser
 
-from gui.lense_desginer import LenseDesginerWidget
 sys.path.append('..')
 import dearpygui.dearpygui as dpg
 import bicow.bicow as bc
@@ -13,6 +12,7 @@ from gui.utils import bind_event, bind_param
 from gui.image_widget import ImageWidget
 from gui.list_widget import ImageListWidget
 from gui.bracket_series_container_widget import ImageContainerWidget
+from gui.lense_desginer import LenseDesignerWidget
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
@@ -55,7 +55,7 @@ class App:
         self._gui_id_parameter_panel:int = None
         self._result_image_widget:ImageWidget = None
         self._image_container_widget:ImageContainerWidget = None
-        self._lense_designer_widget:LenseDesginerWidget = None
+        self._lense_designer_widget:LenseDesignerWidget = None
 
     def _setup_bicow(self):
         bc.bicow_init()
@@ -248,7 +248,7 @@ class App:
                     self._setup_timelapse_tab()
 
                 with dpg.tab(label="Lense Designer") as id:
-                    self._lense_designer_widget:LenseDesginerWidget = LenseDesginerWidget(id)
+                    self._lense_designer_widget:LenseDesignerWidget = LenseDesignerWidget(id)
 
     def show(self):
         while(dpg.is_dearpygui_running()):
