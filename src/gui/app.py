@@ -12,7 +12,7 @@ from gui.utils import bind_event, bind_param
 from gui.image_widget import ImageWidget
 from gui.list_widget import ImageListWidget
 from gui.bracket_series_container_widget import ImageContainerWidget
-from gui.lense_desginer import LenseDesignerWidget
+from gui.lense_designer import LenseDesignerWidget
 
 CMR_CONFIG_FILE_PATH = r'D:\Code\Cameray\src'
 CMR_FONT_FILE_PATH = r'C:\Windows\Fonts\msyh.ttc'
@@ -27,11 +27,11 @@ msgqueue = get_msg_queue()
 class App:
     def __init__(self) -> None:
         self._setup_init()
+        self._setup_bicow()
         self._setup_uuid()
         self._setup_style()
         self._setup_window()
         self._setup_viewport()
-        self._setup_bicow()
 
     def _on_app_close(self, s,a,u):
         dpg.delete_item(s)

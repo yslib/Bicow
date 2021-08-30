@@ -1,10 +1,10 @@
 import math
 import taichi as ti
 import numpy as np
-from renderer_utils import refract, intersect_sphere
+from demo.renderer_utils import refract, intersect_sphere
 
-elements_count = 11
-
+max_elements = 30
+max_draw_rays = 20
 pupil_interval_count = 64
 eps = 1e-5
 inf = 9999999.0
@@ -29,17 +29,21 @@ def inside_aabb(bmin, bmax, pos):
 class RealisticCamera:
     def __init__(self, camera_pos, center, world_up):
         self.vignet = ti.field(ti.i32, shape=())
-        self.curvatureRadius = ti.field(ti.f32)
+
+        self.curvature_radius = ti.field(ti.f32)
         self.thickness = ti.field(ti.f32)
         self.eta = ti.field(ti.f32)
-        self.aperture = ti.field(ti.f32)
+        self.aperture_radius = ti.field(ti.f32)
         self.exitPupilBoundMin = ti.Vector.field(2, dtype=ti.f32)
         self.exitPupilBoundMax = ti.Vector.field(2, dtype=ti.f32)
+        self.draw_rays = ti.Vector.field(3, dtype=ti.f32)
+
+        ti.root.dense(ti.i, (max_elements, )).place(self.curvature_radius, self.thickness, self.eta, self.aperture_radius)
+        ti.root.dense(ti.i, (pupil_interval_count, )).place(self.exitPupilBoundMin, self.exitPupilBoundMax)
+        ti.root.dense(ti.ij, (max_draw_rays, max_elements + 2)).place(self.draw_rays)
+
         self.camera2world_point = ti.Matrix([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]])
         self.camera2world_vec = ti.Matrix([[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]])
-
-        ti.root.dense(ti.i, (elements_count, )).place(self.curvatureRadius, self.thickness, self.eta, self.aperture)
-        ti.root.dense(ti.i, (pupil_interval_count, )).place(self.exitPupilBoundMin, self.exitPupilBoundMax)
 
         self.shutter = 0.1
         self.film_width = 36
@@ -49,6 +53,7 @@ class RealisticCamera:
         self.pixel_height = 600
         self.camera_pos = np.array(camera_pos)
 
+        self._elem_count = 0
         self.load_lens_data()
         self.set_camera(camera_pos, center, world_up)
 
@@ -93,6 +98,9 @@ class RealisticCamera:
             [right[2], up[2], direction[2]]
             ])
 
+    def get_element_count(self):
+        return self._elem_count
+
     def load_lens_data(self):
         wide22 = [
             # curvature radius, thickness, index of refraction, aperture diameter
@@ -108,7 +116,7 @@ class RealisticCamera:
             [7.5911,1.32682,1.805,11.44],
             [16.7662,3.98068,1,12.276],
             [7.70286,1.21638,1.617,13.42],
-            [11.97328,0.0,1,17.996]
+            [11.97328,10,1,17.996]
         ]
         dgauss50 = [
             [29.475,3.76,1.67,25.2],
@@ -121,7 +129,7 @@ class RealisticCamera:
             [40.77,6.065,1.658,20],
             [-20.385,0.19,1,20],
             [437.065,3.22,1.717,20],
-            [-39.73,0,1,20]
+            [-39.73,5.0,1,20]
         ]
         telephoto=[
             [21.851,0	,1.529,19.0],
@@ -143,12 +151,22 @@ class RealisticCamera:
         ]
 
         lenses = dgauss50
+        self._elem_count = len(lenses)
+        self._lenses_data = lenses.copy()
+        for _ in range(max(0, max_elements - self._elem_count)):
+            lenses.append([0 for j in range(4)])
         a = np.array(lenses).transpose()
-        self.curvatureRadius.from_numpy(a[0])
+        self.curvature_radius.from_numpy(a[0])
         self.thickness.from_numpy(a[1])
         self.eta.from_numpy(a[2])
-        self.aperture.from_numpy(a[3]/2.0)
+        self.aperture_radius.from_numpy(a[3]/2.0)
 
+    def get_lenses_data(self):
+        a = self.curvature_radius.to_numpy()[0:self._elem_count]
+        b = self.thickness.to_numpy()[0:self._elem_count]
+        c = self.eta.to_numpy()[0:self._elem_count]
+        d = self.aperture_radius.to_numpy()[0:self._elem_count] * 2.0
+        return np.stack((a,b,c,d)).transpose()
 
     @ti.func
     def camera_2_world(self, o, d):
@@ -164,7 +182,7 @@ class RealisticCamera:
 
     @ti.func
     def rear_z(self):
-        return self.thickness[elements_count - 1]
+        return self.thickness[self._elem_count - 1]
 
     @ti.func
     def front_z(self):
@@ -175,11 +193,11 @@ class RealisticCamera:
 
     @ti.func
     def rear_radius(self):
-        return self.curvatureRadius[self.curvatureRadius.shape[0] - 1]
+        return self.curvature_radius[self._elem_count - 1]
 
     @ti.func
     def rear_aperture(self):
-        return self.aperture[self.aperture.shape[0] - 1]
+        return self.aperture_radius[self._elem_count - 1]
 
     @ti.kernel
     def recompute_exit_pupil(self):
@@ -354,11 +372,11 @@ class RealisticCamera:
         assert f > 0
         z = -focus_distance
         delta = 0.5 * (pz2 - z + pz1 - ti.sqrt((pz2 - z - pz1)*(pz2-z-4*f-pz1) ))
-        return self.thickness[self.thickness.shape[0] - 1] + delta
+        return self.thickness[self._elem_count - 1] + delta
 
     @ti.kernel
     def refocus(self, focus_distance:ti.f32):
-        self.thickness[self.thickness.shape[0] - 1] = self.focus_thick_camera(focus_distance * 1000.0)
+        self.thickness[self._elem_count - 1] = self.focus_thick_camera(focus_distance * 1000.0)
 
     @ti.func
     def intersect_with_sphere(self,
@@ -416,12 +434,12 @@ class RealisticCamera:
         t = 0.0
         n = ti.Vector([0.0,0.0,0.0])
         for _ in range(1):  # force the inner loop serialized so that break could be used
-            for i in range(elements_count):
-                is_stop = self.curvatureRadius[i] == 0.0
+            for i in range(self._elem_count):
+                is_stop = self.curvature_radius[i] == 0.0
                 if is_stop:
                     t = (elemZ - ro.z) / rd.z
                 else:
-                    radius = self.curvatureRadius[i]
+                    radius = self.curvature_radius[i]
                     centerZ = elemZ + radius
                     isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
                     if not isect:
@@ -432,7 +450,7 @@ class RealisticCamera:
 
                 hit = ro + rd * t
                 r = hit.x * hit.x + hit.y * hit.y
-                if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
+                if r > self.aperture_radius[i] * self.aperture_radius[i]:  # out of the element aperture
                     ok = False
                     break
                 ro = ti.Vector([hit.x, hit.y, hit.z])
@@ -465,17 +483,17 @@ class RealisticCamera:
         t = 0.0
         n = ti.Vector([0.0,0.0,0.0])
         for _ in range(1):  # force the inner loop serialized so that break could be allowed
-            for ii in range(elements_count):
-                i = elements_count - ii - 1
+            for ii in range(self._elem_count):
+                i = self._elem_count - ii - 1
                 elemZ -= self.thickness[i]
-                is_stop = self.curvatureRadius[i] == 0.0
+                is_stop = self.curvature_radius[i] == 0.0
                 if is_stop:
                     if rd.z >= 0.0:
                         ok = False
                         break
                     t = (elemZ - ro.z) / rd.z
                 else:
-                    radius = self.curvatureRadius[i]
+                    radius = self.curvature_radius[i]
                     centerZ = elemZ + radius
                     isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
                     if not isect:
@@ -485,7 +503,7 @@ class RealisticCamera:
                 assert t > 0.0
                 hit = ro + rd * t
                 r = hit.x * hit.x + hit.y * hit.y
-                if r > self.aperture[i] * self.aperture[i]:  # out of the element aperture
+                if r > self.aperture_radius[i] * self.aperture_radius[i]:  # out of the element aperture
                     ok = False
                     break
 
@@ -503,3 +521,121 @@ class RealisticCamera:
                     rd = ti.Vector([d.x, d.y, d.z])
 
         return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z]).normalized()
+
+    @ti.kernel
+    def gen_draw_rays_from_film(self):
+        """
+        draw the bound ray
+        """
+        r = self.aperture_radius[self._elem_count - 1]
+        for j in range(1):
+            for i in range(100):
+                y = r - i * 0.01
+                ori, dir = ti.Vector([0.0,0.0,0.0]), ti.Vector([y, 0.0, self.rear_z()])
+                ok, a, b = self.gen_ray_from_film(ori, dir)
+                if not ok:
+                    continue
+                self.draw_ray_from_film(ori, dir, 0)
+
+    @ti.kernel
+    def gen_draw_rays_from_scene(self):
+        pass
+
+    @ti.func
+    def draw_ray_from_film(self, ori, dir, ind):
+        ro, rd = ti.Vector([ori.x, ori.y, -ori.z]), ti.Vector([dir.x, dir.y, -dir.z]).normalized()
+        elemZ = 0.0
+        ok = True
+        t = 0.0
+        n = ti.Vector([0.0,0.0,0.0])
+        for _ in range(1):  # force the inner loop serialized so that break could be allowed
+            for ii in range(self._elem_count):
+                i = self._elem_count - ii - 1
+                elemZ -= self.thickness[i]
+                is_stop = self.curvature_radius[i] == 0.0
+                if is_stop:
+                    if rd.z >= 0.0:
+                        ok = False
+                        break
+                    t = (elemZ - ro.z) / rd.z
+                else:
+                    radius = self.curvature_radius[i]
+                    centerZ = elemZ + radius
+                    isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
+                    if not isect:
+                        ok = False
+                        break
+
+                hit = ro + rd * t
+                r = hit.x * hit.x + hit.y * hit.y
+                if r > self.aperture_radius[i] * self.aperture_radius[i]:  # out of the element aperture
+                    ok = False
+                    break
+
+                self.draw_rays[ind, ii] = ro
+
+                ro = ti.Vector([hit.x, hit.y, hit.z])
+
+                if not is_stop:
+                    # refracted by lens
+                    etaI = self.eta[i]
+                    etaT = self.eta[i - 1] if i > 0 and self.eta[i - 1] != 0.0 else 1.0   # the outer of 0-th element is air, whose eta is 1.0
+                    has_r, d = refract(rd, n, etaI/etaT)
+                    if not has_r:
+                        ok = False
+                        break
+                    rd = ti.Vector([d.x, d.y, d.z])
+
+        self.draw_rays[ind, self._elem_count] = ro
+        self.draw_rays[ind, self._elem_count + 1] = ro + rd * 20.0
+        # return ok, ti.Vector([ro.x, ro.y, -ro.z]), ti.Vector([rd.x, rd.y, -rd.z]).normalized()
+
+    @ti.func
+    def draw_ray_from_scene(self, ori, dir, ind):
+        ro, rd = ti.Vector([ti.cast(ori.x,ti.f32), ori.y, -ori.z]), ti.Vector([ti.cast(dir.x,ti.f32), dir.y, -dir.z]).normalized()
+        elemZ = -self.front_z()
+        ok = True
+        t = 0.0
+        n = ti.Vector([0.0,0.0,0.0])
+        for _ in range(1):  # force the inner loop serialized so that break could be used
+            for i in range(self._elem_count):
+                is_stop = self.curvature_radius[i] == 0.0
+                if is_stop:
+                    t = (elemZ - ro.z) / rd.z
+                else:
+                    radius = self.curvature_radius[i]
+                    centerZ = elemZ + radius
+                    isect, t, n = self.intersect_with_sphere(centerZ, radius, ro, rd)
+                    if not isect:
+                        ok = False
+                        break
+
+                assert t > 0.0
+
+                hit = ro + rd * t
+                r = hit.x * hit.x + hit.y * hit.y
+                if r > self.aperture_radius[i] * self.aperture_radius[i]:  # out of the element aperture
+                    ok = False
+                    break
+
+                self.draw_rays[ind, i] = ro
+                ro = ti.Vector([hit.x, hit.y, hit.z])
+
+                if not is_stop:
+                    # refracted by lens
+                    etaI = 1.0 if i == 0 or self.eta[i - 1] == 0.0 else self.eta[i - 1]
+                    etaT = self.eta[i] if self.eta[i] != 0.0 else 1.0
+                    rd.normalized()
+                    has_r, d = refract(rd, n, etaI/etaT)
+                    if not has_r:
+                        ok = False
+                        break
+                    rd = ti.Vector([d.x, d.y, d.z])
+
+                elemZ += self.thickness[i]
+
+        self.draw_rays[ind, self._elem_count] = ro
+        self.draw_rays[ind, self._elem_count + 1] = ro + rd * 20.0
+
+    def get_ray_points(self):
+        return self.draw_rays.to_numpy()
