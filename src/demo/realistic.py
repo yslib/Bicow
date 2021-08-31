@@ -1,6 +1,7 @@
 import math
 import taichi as ti
 import numpy as np
+from typing import List, Dict
 from demo.renderer_utils import refract, intersect_sphere
 
 max_elements = 30
@@ -8,6 +9,46 @@ max_draw_rays = 20
 pupil_interval_count = 64
 eps = 1e-5
 inf = 9999999.0
+
+def convert_raw_data_from_dict(raw_data:List[List[float]]):
+    """
+    Args: raw_data
+    for example:
+    [
+        # curvature radius, thickness, index of refraction, aperture diameter
+        [29.475,3.76,1.67,25.2],
+        [84.83,0.12,1,25.2],
+        [19.275,4.025,1.67,23],
+        [40.77,3.275,1.699,23],
+        [12.75,5.705,1,18],
+        [0,4.5,0,17.1],
+        [-14.495,1.18,1.603,17],
+        [40.77,6.065,1.658,20],
+        [-20.385,0.19,1,20],
+        [437.065,3.22,1.717,20],
+        [-39.73,5.0,1,20]
+    ]
+    """
+    dict_data = []
+    for elem in raw_data:
+        dict_data.append(
+            {'curvature_radius':elem[0],
+            'thickness':elem[1],
+            'eta':elem[2],
+            'aperture_diameter':elem[3]
+            })
+    return dict_data
+
+def convert_dict_data_from_raw(dict_data:List[Dict[str, List[float]]]):
+    raw_data = []
+    for elem_dict in dict_data:
+        raw_data.append([
+            elem_dict.get('curvature_radius', 0),
+            elem_dict.get('thickness', 0),
+            elem_dict.get('eta', 0),
+            elem_dict.get('aperture_diameter', 0)
+            ])
+    return raw_data
 
 @ti.func
 def lerp(val, begin ,end):
@@ -24,6 +65,8 @@ def make_bound2():
 @ti.func
 def inside_aabb(bmin, bmax, pos):
     return all(bmin <= pos) and all(pos <= bmax)
+
+
 
 @ti.data_oriented
 class RealisticCamera:
@@ -54,7 +97,7 @@ class RealisticCamera:
         self.camera_pos = np.array(camera_pos)
 
         self._elem_count = 0
-        self.load_lens_data()
+        self.load_lens_data([[]])
         self.set_camera(camera_pos, center, world_up)
 
     def get_resolution(self):
@@ -101,7 +144,7 @@ class RealisticCamera:
     def get_element_count(self):
         return self._elem_count
 
-    def load_lens_data(self):
+    def load_lens_data(self, lenses:List[List[float]]):
         wide22 = [
             # curvature radius, thickness, index of refraction, aperture diameter
             [35.98738, 1.21638, 1.54, 23.716],

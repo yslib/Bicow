@@ -2,7 +2,7 @@ import math
 import dearpygui.dearpygui as dpg
 from typing import List, Any, Callable, Dict
 from gui.widget import Widget
-from demo.realistic import RealisticCamera
+from demo.realistic import RealisticCamera, convert_dict_data_from_raw, convert_raw_data_from_dict
 import numpy as np
 class LenseCanvasWidget(Widget):
     def __init__(self, *, parent: int, film_height=24.0):
@@ -157,6 +157,7 @@ class SceneCanvasWidget(Widget):
         self._canvas = 0
 
 
+
 class NodeWidget(Widget):
     def __init__(self,*, name:str, parent:int):
         super(NodeWidget, self).__init__(parent)
@@ -187,21 +188,96 @@ class FilmNode(NodeWidget):
 class LenseGroup(NodeWidget):
     def __init__(self,*,name:str,parent:int):
         super(LenseGroup, self).__init__(name=name, parent=parent)
+        with dpg.node_attribute(label='input', attribute_type=dpg.mvNode_Attr_Input, parent=self.widget()) as self._input_attri:
+            self._aperture_radius = dpg.add_input_float(label='Radius', width=100, default_value=5.0)
+
+        with dpg.node_attribute(label='output', attribute_type=dpg.mvNode_Attr_Output, parent=self.widget()) as self._ouput_attri:
+            pass
+
+
+class ApertureStop(LenseGroup):
+    def __init__(self, *, parent: int):
+        super().__init__('Aperture Stop', parent)
+        with dpg.node_attribute(label='input', attribute_type=dpg.mvNode_Attr_Input, parent=self.widget()) as self._input_attri:
+            self._aperture_radius = dpg.add_input_float(label='Radius', width=100, default_value=5.0)
+
+        with dpg.node_attribute(label='output', attribute_type=dpg.mvNode_Attr_Output, parent=self.widget()) as self._ouput_attri:
+            pass
+
+    @property
+    def aperture_radius(self):
+        return dpg.get_value(self._aperture_radius)
+
+    @aperture_radius.setter
+    def aperture_radius(self, value):
+        dpg.configure_item(self._aperture_radius, value=value)
 
 class SphereLenseGroup(LenseGroup):
     def __init__(self,*,name:str, parent:int):
         super(SphereLenseGroup, self).__init__(name=name, parent=parent)
 
 
+
+dgauss50 = [
+    [29.475,3.76,1.67,25.2],
+    [84.83,0.12,1,25.2],
+    [19.275,4.025,1.67,23],
+    [40.77,3.275,1.699,23],
+    [12.75,5.705,1,18],
+    [0,4.5,0,17.1],
+    [-14.495,1.18,1.603,17],
+    [40.77,6.065,1.658,20],
+    [-20.385,0.19,1,20],
+    [437.065,3.22,1.717,20],
+    [-39.73,5.0,1,20]
+]
+
+
 class LenseEditorWidget(Widget):
     def __init__(self,*,update_callback:Callable[[Any],None], parent: int):
         super().__init__(parent)
-        self._node_list = []
+        self._lense_group_node_list:List[LenseGroup] = []
+        self._link_list = []
+
+        self._lense_data:List[Dict[str, List[float]]]= []
         self._update_callback = update_callback
+        self._valid_lenses = False
         with dpg.node_editor(parent=parent,callback=self._add_node_link, delink_callback=self._delete_link) as self._widget_id:
             pass
 
         self._add_default_node()
+
+    def set_lense_data(self, lense_data_dict:List[Dict[str, List[float]]]):
+        """
+        Sets lense data
+
+        Note: this function will invoke update_callback
+        """
+        self._clear_lense()
+        self._lense_data = lense_data_dict.copy()
+
+        callable(self._update_callback) and self._update_callback()
+
+    def get_lense_data(self):
+        """
+        Returned data makes sense only
+        when is_valid_lenses() returns True
+        """
+        return self._lense_data.copy()
+
+    def is_valid_lenses(self):
+        """
+        Returns True if the lenses is valid otherwise returns False
+        (e.g. links between lense groups are not closed)
+        """
+        return self._valid_lenses
+
+    def clear_lenses(self):
+        """
+        Note: this function will invoke update_callback
+        """
+        self._clear_lense()
+        callable(self._update_callback) and self._update_callback()
 
     def _add_node_link(self, sender:int, app_data:Any, user_data:Any):
         print('add_node_link: ', sender, app_data, user_data)
@@ -213,27 +289,16 @@ class LenseEditorWidget(Widget):
         dpg.delete_item(app_data)
         callable(self._update_callback) and self._update_callback()
 
+    def _clear_lense(self):
+        for group in self._lense_group_node_list:
+            dpg.delete_item(group.widget())
+
     def _add_default_node(self):
-        self._add_node(SceneNode(self.widget()))
-        self._add_node(FilmNode(self.widget()))
+        self._add_lense_group_node(SceneNode(self.widget()))
+        self._add_lense_group_node(FilmNode(self.widget()))
 
-    def _add_node(self, node_widget:NodeWidget):
-        self._node_list.append(node_widget)
-        callable(self._update_callback) and self._update_callback()
-
-    def open(self, filename:str):
-        raise NotImplementedError
-
-    def save(self, filename:str):
-        """
-        """
-        raise NotImplementedError
-
-    def get_lense_data_dict(self):
-        return
-
-    def clear_lenses(self):
-        self._add_default_node()
+    def _add_lense_group_node(self, lense_group_node:LenseGroup):
+        self._lense_group_node_list.append(lense_group_node)
         callable(self._update_callback) and self._update_callback()
 
 class LenseDesignerWidget(Widget):
@@ -255,11 +320,6 @@ class LenseDesignerWidget(Widget):
         Update Realistic camera here
         """
         print('_editor_update')
-
-    def _convert_raw_lense_data(self, lense_data_dict:Dict[str,List[float]]):
-        """
-        """
-        return [[]]
 
     def _lense_update(self):
         self.camera.refocus(0.2)
