@@ -1,6 +1,7 @@
 import math
 import dearpygui.dearpygui as dpg
 from typing import List, Any, Callable, Dict
+from gui import widget
 from gui.widget import Widget
 from demo.realistic import RealisticCamera, convert_dict_data_from_raw, convert_raw_data_from_dict
 import numpy as np
@@ -157,42 +158,77 @@ class SceneCanvasWidget(Widget):
         self._canvas = 0
 
 
+class NodeAttributeValueType:
+    ATTRI_FLOAT = 0
+    ATTRI_FLOATX = 1
 
 class NodeWidget(Widget):
     def __init__(self,*, name:str, parent:int):
         super(NodeWidget, self).__init__(parent)
-        self._attri_list = []
+        self._attri_dict:Dict[str,Any] = {}
         with dpg.node(label=name,parent=parent) as self._widget_id:
             pass
 
-    def _register_attri(self, attri_name:str):
-        pass
+    def add_attribute(self, attri_name:str, attri_type:int):
+        if attri_name not in self._attri_dict.keys():
+            with dpg.node_attribute(label=attri_name, attribute_type=attri_type, parent=self.widget()) as attri:
+                self._attri_dict[attri_name] = (attri, {})
 
-    def get_attri_value(self, attri_name:str):
-        pass
+    def get_attribute(self, attri_name:str):
+        return self._attri_dict.get(attri_name, (None, {}))[0]
+
+
+    def remove_attribute(self, attri_name):
+        if attri_name in self._attri_dict.keys():
+            dpg.delete_item(self._attri_dict[attri_name][0])
+
+    def add_value(self,*,attri_name:str,
+                        value_name:str,
+                        value_type:int,
+                        default_value:Any,
+                        size:int=4,
+                        callback:Callable[[Any], Any]=None):
+
+        attri_id = self.get_attribute(attri_name)
+        attri_id, value_dict = self._attri_dict.get(attri_name, (None, {}))
+        if attri_id is None:
+            print('No corresponding attribute :', attri_name)
+            return
+
+        width = 100
+
+        if value_name in value_dict.keys():
+            print(value_name, 'has already existed in attribute ', attri_name)
+            return
+        else:
+            if value_type == NodeAttributeValueType.ATTRI_FLOAT:
+                value_id = dpg.add_input_float(label=value_name, callback=callback,default_value=default_value,parent=attri_id,width=width)
+            elif value_type == NodeAttributeValueType.ATTRI_FLOATX:
+                value_id = dpg.add_input_floatx(label=value_name, callback=callback,default_value=default_value,size=size, parent=attri_id,width=width)
+            value_dict[value_name] = value_id
+
+    def get_attri_value(self,attri_name:str, value_name:str):
+        return self._attri_dict.get(attri_name, (-1, {}))[1].get(value_name, None)
 
 class SceneNode(NodeWidget):
     def __init__(self,parent:int):
         super(SceneNode, self).__init__(name='Scene',parent=parent)
-        with dpg.node_attribute(label='Scene', attribute_type=dpg.mvNode_Attr_Output, parent=self.widget()) as self._attri:
-            pass
-
+        self.add_attribute(attri_name='SceneOutput',attri_type=dpg.mvNode_Attr_Output)
 
 class FilmNode(NodeWidget):
     def __init__(self, parent:int):
         super(FilmNode, self).__init__(name='Film',parent=parent)
-        with dpg.node_attribute(label='Film', attribute_type=dpg.mvNode_Attr_Input, parent=self.widget()) as self._attri:
-            dpg.add_input_floatx(label='Film size',width=200, size=2, default_value=(36.00,24.00))
-
+        self.add_attribute(attri_name='FilmInput',attri_type=dpg.mvNode_Attr_Input)
+        self.add_value(attri_name='FilmInput',
+        value_name='Film Size',
+        value_type=NodeAttributeValueType.ATTRI_FLOATX,
+        default_value=(36,24),
+        size=2,
+        callback=None)
 
 class LenseGroup(NodeWidget):
     def __init__(self,*,name:str,parent:int):
         super(LenseGroup, self).__init__(name=name, parent=parent)
-        with dpg.node_attribute(label='input', attribute_type=dpg.mvNode_Attr_Input, parent=self.widget()) as self._input_attri:
-            self._aperture_radius = dpg.add_input_float(label='Radius', width=100, default_value=5.0)
-
-        with dpg.node_attribute(label='output', attribute_type=dpg.mvNode_Attr_Output, parent=self.widget()) as self._ouput_attri:
-            pass
 
 
 class ApertureStop(LenseGroup):
