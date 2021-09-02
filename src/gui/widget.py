@@ -44,3 +44,6 @@ class Widget:
 
     def parent(self)->int:
         return self._parent_id
+
+    def __del__(self):
+        self._widget_id and dpg.delete_item(self._widget_id)
