@@ -45,5 +45,50 @@ class Widget:
     def parent(self)->int:
         return self._parent_id
 
-    def __del__(self):
+    def property_changed(self, s, a, u):
+        pass
+
+    def delete(self):
         self._widget_id and dpg.delete_item(self._widget_id)
+        self._widget_id = None
+
+    def __del__(self):
+        self.delete()
+
+class AttributeValueType:
+    ATTRI_FLOAT = 0
+    ATTRI_FLOATX = 1
+    ATTRI_INT = 2
+
+def widget_property(name:str, property_type:int, min_value:Any, max_value:Any, width=20,height=10):
+    storage_name = '_' + name
+    @property
+    def prop(self:Widget):
+        return dpg.get_value(getattr(self, storage_name))
+
+    @prop.setter
+    def prop(self:Widget, value):
+        if not hasattr(self, storage_name):
+            if property_type == AttributeValueType.ATTRI_FLOAT:
+                item_id = dpg.add_input_float(
+                    label=name,
+                    default_value=value,
+                    min_value=min_value,
+                    max_value=max_value,
+                    width=width,
+                    parent=self.widget(),
+                    callback=self.property_changed)
+            elif property_type == AttributeValueType.ATTRI_INT:
+                item_id = dpg.add_input_int(
+                    label=name,
+                    default_value=value,
+                    min_value=min_value,
+                    max_value=max_value,
+                    width=width,
+                    parent=self.widget(),
+                    callback=self.property_changed)
+            setattr(self, storage_name, item_id)
+        else:
+            item_id = getattr(self, storage_name)
+            dpg.set_value(item_id, value)
+    return prop

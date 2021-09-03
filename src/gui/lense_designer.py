@@ -1,13 +1,9 @@
 import math
-from os import name
 import dearpygui.dearpygui as dpg
 from typing import List, Any, Callable, Dict
 
-from numpy.core.fromnumeric import size
-from numpy.lib.function_base import select
-from gui import widget
-from gui.widget import Widget
-from demo.realistic import RealisticCamera, convert_dict_data_from_raw, convert_raw_data_from_dict
+from gui.widget import Widget, widget_property, AttributeValueType
+from demo.realistic import RealisticCamera
 import numpy as np
 class LenseCanvasWidget(Widget):
     def __init__(self, *, parent: int, film_height=24.0):
@@ -161,73 +157,27 @@ class SceneCanvasWidget(Widget):
         super().__init__(parent)
         self._canvas = 0
 
-
-class NodeAttributeValueType:
-    ATTRI_FLOAT = 0
-    ATTRI_FLOATX = 1
-    ATTRI_INT = 2
-
-
-def widget_property(name:str, property_type:int, min_value:Any, max_value:Any, width=20,height=10):
-    storage_name = '_' + name
-    @property
-    def prop(self:Widget):
-        return dpg.get_value(getattr(self, storage_name))
-
-    @prop.setter
-    def prop(self:Widget, value):
-        if not hasattr(self, storage_name):
-            if property_type == NodeAttributeValueType.ATTRI_FLOAT:
-                item_id = dpg.add_input_float(
-                    label=name,
-                    default_value=value,
-                    min_value=min_value,
-                    max_value=max_value,
-                    width=width,
-                    parent=self.widget())
-            elif property_type == NodeAttributeValueType.ATTRI_INT:
-                item_id = dpg.add_input_int(
-                    label=name,
-                    default_value=value,
-                    min_value=min_value,
-                    max_value=max_value,
-                    width=width,
-                    parent=self.widget())
-            setattr(self, storage_name, item_id)
-        else:
-            item_id = getattr(self, storage_name)
-            dpg.set_value(item_id, value)
-    return prop
-
-
 class LenseSurface(Widget):
     def __init__(self, parent: int):
         super().__init__(parent)
 class LenseSphereSurface(LenseSurface):
-    """
-    Data representation for a single surface of lense
-    """
-    curvature_radius = widget_property('curvature_radius', NodeAttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
-    thickness = widget_property('thickness', NodeAttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
-    eta = widget_property('eta', NodeAttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
-    aperture_radius = widget_property('aperture_radius', NodeAttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    curvature_radius = widget_property('Curvature Radius', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    thickness = widget_property('Thickness', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    eta = widget_property('Eta', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    aperture_radius = widget_property('Aperture Radius', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
     def __init__(self, parent: int):
         super().__init__(parent)
-        # with dpg.child(label='',parent=parent, width=200, height=150) as self._widget_id:
-        self._widget_id = parent
-        self.curvature_radius = 0.0
-        self.thickness = 0.0
-        self.eta = 0.0
-        self.aperture_radius = 0.0
+        with dpg.tree_node(label='SphereElement',parent=parent) as self._widget_id:
+            self.curvature_radius = 0.0
+            self.thickness = 0.0
+            self.eta = 0.0
+            self.aperture_radius = 0.0
 
     def dump(self):
-        ret = [
-            self.curvature_radius,
-            self.thickness,
-            self.eta,
-            self.aperture_radius
-            ]
-        return ret
+        return [ self.curvature_radius,self.thickness,self.eta,self.aperture_radius]
+
+    def property_changed(self, s, a, u):
+        print(s, a, u)
 
     def load(self, data:List[float]= [0.0,0.0,0.0,0.0]):
         self.curvature_radius = data[0]
@@ -275,11 +225,11 @@ class NodeWidget(Widget):
             print(value_name, 'has already existed in attribute ', attri_name)
             return None
         else:
-            if value_type == NodeAttributeValueType.ATTRI_FLOAT:
+            if value_type == AttributeValueType.ATTRI_FLOAT:
                 value_id = dpg.add_input_float(label=value_name, callback=callback,default_value=default_value,parent=attri_id,width=width)
-            elif value_type == NodeAttributeValueType.ATTRI_FLOATX:
+            elif value_type == AttributeValueType.ATTRI_FLOATX:
                 value_id = dpg.add_input_floatx(label=value_name, callback=callback,default_value=default_value,size=size, parent=attri_id,width=width)
-            elif value_type == NodeAttributeValueType.ATTRI_INT:
+            elif value_type == AttributeValueType.ATTRI_INT:
                 value_id = dpg.add_input_int(label=value_name,callback=callback,default_value=default_value, parent=attri_id,width=width)
             value_dict[value_name] = value_id
 
@@ -309,7 +259,7 @@ class SceneNode(NodeWidget):
     def __init__(self,parent:int, value_update_callback:Callable[[Any], None]=None):
         super(SceneNode, self).__init__(name='Scene',parent=parent)
         self.add_attribute(attri_name='SceneOutput',attri_type=dpg.mvNode_Attr_Output)
-        self.add_value(value_name='Focus depth',attri_name='SceneOutput', value_type=NodeAttributeValueType.ATTRI_FLOAT,default_value=10.0,callback=value_update_callback)
+        self.add_value(value_name='Focus depth',attri_name='SceneOutput', value_type=AttributeValueType.ATTRI_FLOAT,default_value=10.0,callback=value_update_callback)
 
 class FilmNode(NodeWidget):
     def __init__(self, parent:int,value_update_callback:Callable[[Any], None]=None):
@@ -317,7 +267,7 @@ class FilmNode(NodeWidget):
         self.add_attribute(attri_name='FilmInput',attri_type=dpg.mvNode_Attr_Input)
         self.add_value(attri_name='FilmInput',
         value_name='Film Size',
-        value_type=NodeAttributeValueType.ATTRI_FLOATX,
+        value_type=AttributeValueType.ATTRI_FLOATX,
         default_value=(36,24),
         size=2,
         callback=value_update_callback)
@@ -329,7 +279,7 @@ class ApertureStop(NodeWidget):
         self.add_attribute('Output',dpg.mvNode_Attr_Output)
         self.add_value(attri_name='Input',
         value_name='Stop Radius',
-        value_type=NodeAttributeValueType.ATTRI_FLOAT,
+        value_type=AttributeValueType.ATTRI_FLOAT,
         default_value=10.00,
         callback=value_update_callback)
 
@@ -348,34 +298,28 @@ class LenseSurfaceGroup(NodeWidget):
 
         self.count_attri = self.add_value(attri_name=self._input_attri_name,
         value_name=self._surface_count_value_name,
-        value_type=NodeAttributeValueType.ATTRI_INT,
+        value_type=AttributeValueType.ATTRI_INT,
         default_value=0,
-        callback=self._surface_count_changed)
+        callback=lambda s,a,u:self._update_surface(int(a)))
 
-    def _surface_count_changed(self, s, a, u):
+
+    def _update_surface(self, count):
         """
-        Add or remove surface item
         """
         cur_count = len(self._lense_surface_group)
-        print(s, a, u, cur_count)
+        print('surface count changed: ',count, cur_count)
 
-        delta = a - cur_count
+        delta = count - cur_count
         if delta > 0:
             for _ in range(delta):
                 surf = LenseSphereSurface(self.input_attri_item_id)
-                surf.load()
                 self._lense_surface_group.append(surf)
-        else:
-            for i in range(a, cur_count):
-                del self._lense_surface_group[i]
+        elif delta < 0:
+            for item in self._lense_surface_group[count:]:
+                item.delete()
+            del self._lense_surface_group[count:]
 
         callable(self._update_callback) and self._update_callback()
-
-    def add_surface(self, surface: List[float]=[]):
-        pass
-
-    def _remove_surface(self,):
-        pass
 
     def load(self, raw_group_data: List[List[float]]):
         self._clear_surface_data()
@@ -397,7 +341,7 @@ class LenseSurfaceGroup(NodeWidget):
 
     def _clear_surface_data(self):
         for surf in self._lense_surface_group:
-            dpg.delete_item(surf.widget())
+            surf.delete()
         self._lense_surface_group = []
 
     def clear_surface_data(self):
