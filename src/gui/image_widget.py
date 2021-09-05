@@ -7,7 +7,7 @@ import numpy as np
 
 class ImageWidget(Widget):
     def __init__(self, parent):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         with dpg.child(label='Image', autosize_x=True) as id:
             self._texture_container = dpg.add_texture_registry(label='Texture')
             self._widget_id:int = id

@@ -35,9 +35,11 @@ def _config(sender, keyword, user_data):
         dpg.configure_item(items, **{keyword: value})
 
 class Widget:
-    def __init__(self, parent:int):
+    def __init__(self,*, parent:int,callback:Callable[[Any],None]=None):
         self._widget_id:int = None
         self._parent_id:int = parent
+        self._block = False
+        self._callback = callback
 
     def widget(self)->int:
         return self._widget_id
@@ -46,7 +48,16 @@ class Widget:
         return self._parent_id
 
     def property_changed(self, s, a, u):
-        pass
+        self._invoke_update(sender=s, app_data=a, user_data=u)
+
+    def block_callback(self, block):
+        self._block = block
+
+    def _invoke_update(self, *args, **kwargs):
+        not self._block and callable(self._callback) and self._callback(*args, **kwargs)
+
+    def callback(self):
+        return self._callback
 
     def delete(self):
         self._widget_id and dpg.delete_item(self._widget_id)

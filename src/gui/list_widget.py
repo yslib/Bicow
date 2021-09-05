@@ -4,7 +4,7 @@ from .widget import Widget, get_logger
 
 class ImageListWidget(Widget):
     def __init__(self,label:str, parent: int):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self._widget_id = dpg.add_listbox(label=label,
         items=[],
         num_items=10,

@@ -6,7 +6,7 @@ from gui.list_widget import ImageListWidget
 
 class ImageContainerWidget(Widget):
     def __init__(self,parent):
-        super(ImageContainerWidget, self).__init__(parent)
+        super(ImageContainerWidget, self).__init__(parent=parent)
         # self._widget_id = dpg.child(autosize_y=True, width=200)
         with dpg.child(autosize_x=True, height=250) as cid:
             self._image_list_widget:ImageListWidget = ImageListWidget(label='', parent=cid)
