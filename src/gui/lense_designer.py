@@ -2,6 +2,8 @@ import math
 import dearpygui.dearpygui as dpg
 from typing import List, Any, Callable, Dict
 
+from networkx.classes.function import selfloop_edges
+
 from gui.widget import Widget, widget_property, AttributeValueType
 from demo.realistic import RealisticCamera
 import numpy as np
@@ -187,7 +189,7 @@ class NodeWidget(Widget):
         super(NodeWidget, self).__init__(parent=parent, callback=callback)
         self._attri_dict:Dict[str,Any] = {}
         self._callback = callback
-        with dpg.node(label=name,parent=parent) as self._widget_id:
+        with dpg.node(label=name,parent=parent, user_data=self) as self._widget_id:
             pass
 
     def add_attribute(self, attri_name:str, attri_type:int):
@@ -393,11 +395,11 @@ class Graph:
     def remove_edge(self, n1, n2):
         self.G.remove_edge(n1, n2)
 
-    def path_exists(self, n1, n2):
-        return nx.communicability(self.G)
+    def simple_path_of(self, n1, n2):
+        return list(nx.all_simple_paths(self.G, n1, n2))
 
     def edge_exists(self, n1, n2):
-        return self._adj_mat[n1][n2] != 0 if n1 != n2 else False
+        return self.G.has_edge(n1, n2)
 
 
 class LenseEditorWidget(Widget):
@@ -408,15 +410,21 @@ class LenseEditorWidget(Widget):
 
         self._lense_data:List[Dict[str, List[float]]]= []
         self._valid_lenses = False
+        self._editor_id = -1
         with dpg.node_editor(parent=parent,callback=self._add_node_link, delink_callback=self._delete_link) as self._widget_id:
             pass
 
-        self._add_default_node()
-        self._add_lense_group_node(LenseSurfaceGroup(name='Lense1',parent=self.widget(), update_callback=self.callback()))
-        self._add_lense_group_node(LenseSurfaceGroup(name='Gauss Lense1',parent=self.widget(), update_callback=self.callback()))
-        self._add_lense_group_node(LenseSurfaceGroup(name='Gauss Lense2',parent=self.widget(), update_callback=self.callback()))
-        self._add_lense_group_node(LenseSurfaceGroup(name='Lense2',parent=self.widget(), update_callback=self.callback()))
+        dpg.add_button(label='Add Lense', callback=self._add_new_node)
 
+        self._editor_id = self.widget()
+
+        self._add_default_node()
+        self._add_lense_group_node(LenseSurfaceGroup(name='Lense1',parent=self._editor_id, update_callback=self.callback()))
+        self._add_lense_group_node(LenseSurfaceGroup(name='Gauss Lense1',parent=self._editor_id, update_callback=self.callback()))
+        self._add_lense_group_node(LenseSurfaceGroup(name='Gauss Lense2',parent=self._editor_id, update_callback=self.callback()))
+        self._add_lense_group_node(LenseSurfaceGroup(name='Lense2',parent=self._editor_id, update_callback=self.callback()))
+
+        self.node_manager = Graph()
 
 
     def set_lense_data(self, lense_data_dict:List[Dict[str, List[float]]]):
@@ -468,10 +476,14 @@ class LenseEditorWidget(Widget):
 
         self._lense_group_node_list = []
 
+
+    def _add_new_node(self, s, a, u):
+        pass
+
     def _add_default_node(self):
-        self._add_lense_group_node(SceneNode(self.widget(), self.callback()))
-        self._add_lense_group_node(FilmNode(self.widget(), self.callback()))
-        self._add_lense_group_node(ApertureStop(parent=self.widget(), value_update_callback=self.callback()))
+        self._add_lense_group_node(SceneNode(self._editor_id, self.callback()))
+        self._add_lense_group_node(FilmNode(self._editor_id, self.callback()))
+        self._add_lense_group_node(ApertureStop(parent=self._editor_id, value_update_callback=self.callback()))
 
     def _add_lense_group_node(self, lense_group_node:LenseSurfaceGroup):
         self._lense_group_node_list.append(lense_group_node)

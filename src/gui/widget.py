@@ -47,6 +47,9 @@ class Widget:
     def parent(self)->int:
         return self._parent_id
 
+    def __hash__(self):
+        return self._widget_id
+
     def property_changed(self, s, a, u):
         self._invoke_update(sender=s, app_data=a, user_data=u)
 
