@@ -194,7 +194,7 @@ class NodeWidget(Widget):
 
     def add_attribute(self, attri_name:str, attri_type:int):
         if attri_name not in self._attri_dict.keys():
-            with dpg.node_attribute(label=attri_name, attribute_type=attri_type, parent=self.widget()) as attri:
+            with dpg.node_attribute(label=attri_name, attribute_type=attri_type, parent=self.widget(),user_data=self.widget()) as attri:
                 self._attri_dict[attri_name] = (attri, {})
                 return attri
         return None
@@ -255,17 +255,18 @@ class NodeWidget(Widget):
         print('No such value: ', value_name, ' of ', attri_name)
 
 
+
 class SceneNode(NodeWidget):
     def __init__(self,parent:int, value_update_callback:Callable[[Any], None]=None):
         super(SceneNode, self).__init__(name='Scene',parent=parent,callback=value_update_callback)
-        self.add_attribute(attri_name='SceneOutput',attri_type=dpg.mvNode_Attr_Output)
-        self.add_value(value_name='Focus depth',attri_name='SceneOutput', value_type=AttributeValueType.ATTRI_FLOAT,default_value=10.0,callback=value_update_callback)
+        self.add_attribute(attri_name='Output',attri_type=dpg.mvNode_Attr_Output)
+        self.add_value(value_name='Focus depth',attri_name='Output', value_type=AttributeValueType.ATTRI_FLOAT,default_value=10.0,callback=value_update_callback)
 
 class FilmNode(NodeWidget):
     def __init__(self, parent:int,value_update_callback:Callable[[Any], None]=None):
         super(FilmNode, self).__init__(name='Film',parent=parent,callback=value_update_callback)
-        self.add_attribute(attri_name='FilmInput',attri_type=dpg.mvNode_Attr_Input)
-        self.add_value(attri_name='FilmInput',
+        self.add_attribute(attri_name='Input',attri_type=dpg.mvNode_Attr_Input)
+        self.add_value(attri_name='Input',
         value_name='Film Size',
         value_type=AttributeValueType.ATTRI_FLOATX,
         default_value=(36,24),
@@ -294,6 +295,7 @@ class LenseSurfaceGroup(NodeWidget):
         self._surface_count_value_name = 'Surface Count'
         self.input_attri_item_id = self.add_attribute(self._input_attri_name, attri_type=dpg.mvNode_Attr_Input)
         self.add_attribute(self._output_attri_name, attri_type=dpg.mvNode_Attr_Output)
+        self.add_attribute('static', attri_type=dpg.mvNode_Attr_Static)
 
         self.count_attri = self.add_value(attri_name=self._input_attri_name,
         value_name=self._surface_count_value_name,
@@ -386,20 +388,63 @@ class EditorEventType:
 
 
 class Graph:
-    def __init__(self):
+    def __init__(self, editor):
         self.G = nx.Graph()
+        self._attri2node = {}
+        self._node2attr = {}
 
-    def add_edge(self, n1, n2):
+    def register_node(self, attris:List[int], node:Widget):
+
+        ok = True
+        for e in attris:
+            if e in self._attri2node.keys():
+                ok = False
+
+        if node in self._node2attr.keys():
+            ok = False
+
+        if not ok:
+            return False
+
+        for e in attris:
+            self._attri2node[e] = node
+
+        self._node2attr[node] = attris
+        return True
+
+    def unregister_node(self, node:Widget):
+        attris = self._node2attr.get(node, [])
+        if len(attris) > 0:
+            del self._node2attr[node]
+
+        for e in attris:
+            if e in self._attri2node.keys():
+                del self._attri2node[e]
+
+
+    def get_node(self, a:int):
+        pass
+
+    def add_edge(self, a1:int, a2:int):
+        n1 = self.get_node(a1)
+        n2 = self.get_node(a2)
+        assert n1 != n2
         self.G.add_edge(n1, n2)
 
-    def remove_edge(self, n1, n2):
+    def remove_edge(self, a1:int, a2:int):
+        n1 = self.get_node(a1)
+        n2 = self.get_node(a2)
+        assert n1 != n2
         self.G.remove_edge(n1, n2)
 
-    def simple_path_of(self, n1, n2):
+    def simple_path_of(self, a1:int, a2:int):
+        n1 = self.get_node(a1)
+        n2 = self.get_node(a2)
+        assert n1 != n2
         return list(nx.all_simple_paths(self.G, n1, n2))
 
-    def edge_exists(self, n1, n2):
-        return self.G.has_edge(n1, n2)
+    def edge_exists(self, a1:int,a2:int):
+        return self.G.has_edge(a1, a2)
 
 
 class LenseEditorWidget(Widget):
