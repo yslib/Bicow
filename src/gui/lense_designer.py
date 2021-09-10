@@ -186,17 +186,20 @@ class LenseSphereSurface(LenseSurface):
         self.aperture_radius = data[3]
 
 
+
 class WidgetNode(Widget):
     def __init__(self,*, name:str, parent:int, callback:Callable[[Any],Any]=None):
         super(WidgetNode, self).__init__(parent=parent, callback=callback)
         self._attri_dict:Dict[str,Any] = {}
         self._callback = callback
+        self._input_attr = None
+        self._output_attr = None
         with dpg.node(label=name,parent=parent, user_data=self) as self._widget_id:
             pass
 
     def add_attribute(self, attri_name:str, attri_type:int):
         if attri_name not in self._attri_dict.keys():
-            with dpg.node_attribute(label=attri_name, attribute_type=attri_type, parent=self.widget(),user_data=self.widget()) as attri:
+            with dpg.node_attribute(label=attri_name, attribute_type=attri_type, parent=self.widget(),user_data=self) as attri:
                 self._attri_dict[attri_name] = (attri, {})
                 return attri
         return None
@@ -256,60 +259,89 @@ class WidgetNode(Widget):
             return
         print('No such value: ', value_name, ' of ', attri_name)
 
+
+class MidNode(WidgetNode):
+    def __init__(self, *, name: str, parent: int, callback: Callable[[Any], Any]):
+        super().__init__(name=name, parent=parent, callback=callback)
+        self._input_end = self.add_attribute('input', dpg.mvNode_Attr_Input)
+        self._output_end = self.add_attribute('output', dpg.mvNode_Attr_Output)
+
+    def input_end(self):
+        return self._input_end
+
+    def output_end(self):
+        return self._output_end
+
+
+class OutputNode(WidgetNode):
+    def __init__(self, *, name: str, parent: int, callback: Callable[[Any], Any]):
+        super().__init__(name=name, parent=parent, callback=callback)
+        self._output_end = self.add_attribute('output', dpg.mvNode_Attr_Output)
+
+    def output_end(self):
+        return self._output_end
+
+class InputNode(WidgetNode):
+    def __init__(self, *, name: str, parent: int, callback: Callable[[Any], Any]):
+        super().__init__(name=name, parent=parent, callback=callback)
+        self._input_end = self.add_attribute('input', dpg.mvNode_Attr_Input)
+
+    def input_end(self):
+        return self._input_end
+
+
 class Edge:
-    def __init__(self, attr1, attr2):
-        self.first_attr_node = attr1
-        self.second_attr_node = attr2
-        self.first_widget_node:Widget = dpg.get_item_user_data(dpg.get_item_parent(attr1))
-        self.second_widget_node:Widget = dpg.get_item_user_data(dpg.get_item_parent(attr2))
+    def __init__(self, attr1:int, attr2:int):
+        self.first = attr1
+        self.second = attr2
+        self.first_node:WidgetNode = dpg.get_item_user_data(dpg.get_item_parent(attr1))
+        self.second_node:WidgetNode = dpg.get_item_user_data(dpg.get_item_parent(attr2))
+        self.item_id = dpg.add_node_link(attr1,attr2)
 
     def __eq__(self, other):
-        return (self.first_attr_node == other.first_attr_node and self.second_attr_node == other.second_attr_node) or \
-            (self.first_attr_node == other.second_attr_node and self.second_attr_node == other.first_attr_node)
+        """
+        Undirected Graph
+        """
+        return (self.first == other.first_attr_node and self.second == other.second_attr_node) or \
+            (self.first == other.second_attr_node and self.second == other.first_attr_node)
 
-class SceneNode(WidgetNode):
+class SceneNode(OutputNode):
     def __init__(self,parent:int, value_update_callback:Callable[[Any], None]=None):
-        super(SceneNode, self).__init__(name='Scene',parent=parent,callback=value_update_callback)
-        self.add_attribute(attri_name='Output',attri_type=dpg.mvNode_Attr_Output)
-        self.add_value(value_name='Focus depth',attri_name='Output', value_type=AttributeValueType.ATTRI_FLOAT,default_value=10.0,callback=value_update_callback)
+        super().__init__(name='Scene',parent=parent,callback=value_update_callback)
+        self.add_attribute(attri_name='focus depth',attri_type=dpg.mvNode_Attr_Static)
+        self.add_value(value_name='Focus depth',attri_name='focus depth', value_type=AttributeValueType.ATTRI_FLOAT,default_value=10.0,callback=value_update_callback)
 
-class FilmNode(WidgetNode):
+class FilmNode(InputNode):
     def __init__(self, parent:int,value_update_callback:Callable[[Any], None]=None):
-        super(FilmNode, self).__init__(name='Film',parent=parent,callback=value_update_callback)
-        self.add_attribute(attri_name='Input',attri_type=dpg.mvNode_Attr_Input)
-        self.add_value(attri_name='Input',
+        super().__init__(name='Film',parent=parent,callback=value_update_callback)
+        self.add_attribute(attri_name='film size',attri_type=dpg.mvNode_Attr_Static)
+        self.add_value(attri_name='film size',
         value_name='Film Size',
         value_type=AttributeValueType.ATTRI_FLOATX,
         default_value=(36,24),
         size=2,
         callback=value_update_callback)
 
-class ApertureStop(WidgetNode):
+class ApertureStop(MidNode):
     def __init__(self, *, parent: int,value_update_callback:Callable[[Any], None]=None):
         super().__init__(name='Aperture Stop', parent=parent, callback=value_update_callback)
-        self.add_attribute('Input',dpg.mvNode_Attr_Input)
-        self.add_attribute('Output',dpg.mvNode_Attr_Output)
-        self.add_value(attri_name='Input',
+        self.add_attribute('stop radius',dpg.mvNode_Attr_Static)
+        self.add_value(attri_name='stop radius',
         value_name='Stop Radius',
         value_type=AttributeValueType.ATTRI_FLOAT,
         default_value=10.00,
         callback=value_update_callback)
 
 
-class LenseSurfaceGroup(WidgetNode):
+class LenseSurfaceGroup(MidNode):
     def __init__(self,*,name:str,parent:int, update_callback:Callable[[Any], Any]=None):
-        super(LenseSurfaceGroup, self).__init__(name=name, parent=parent,callback=update_callback)
+        super().__init__(name=name, parent=parent,callback=update_callback)
         self._lense_surface_group:List[LenseSurface] = []
         self._surface_data_value_id:List[int] = []
-        self._input_attri_name = 'Input'
-        self._output_attri_name = 'Output'
-        self._surface_count_value_name = 'Surface Count'
-        self.input_attri_item_id = self.add_attribute(self._input_attri_name, attri_type=dpg.mvNode_Attr_Input)
-        self.add_attribute(self._output_attri_name, attri_type=dpg.mvNode_Attr_Output)
-        self.add_attribute('static', attri_type=dpg.mvNode_Attr_Static)
+        self.input_attri_item_id = self.add_attribute('surface count', attri_type=dpg.mvNode_Attr_Static)
 
-        self.count_attri = self.add_value(attri_name=self._input_attri_name,
-        value_name=self._surface_count_value_name,
+        self.count_attri = self.add_value(attri_name='surface count',
+        value_name="Surface Count",
         value_type=AttributeValueType.ATTRI_INT,
         default_value=0,
         callback=lambda s,a,u:self._update_surface(int(a)))
@@ -400,97 +432,72 @@ class EditorEventType:
 
 class Graph:
     def __init__(self, editor):
-        self.widget_graph = nx.Graph()
-        self._attri2node:Dict[int, Widget] = {}
-        self._node2attr:Dict[Widget:List[int]] = {}
+        self.g = nx.Graph()
+        self.editor_widget = editor
 
-        self.attri_graph = nx.Graph()
+    def add_node(self, node:int):
+        self.g.add_node(node)
 
-    def register_node(self, attris:List[int], node:Widget):
-        ok = True
-        for e in attris:
-            if e in self._attri2node.keys():
-                ok = False
+    def remove_node(self, node:int):
+        self.g.remove_node(node)
 
-        if node in self._node2attr.keys():
-            ok = False
+    def add_edge(self, attr1, attr2, edge_item):
+        n1 = dpg.get_item_parent(attr1)
+        n2 = dpg.get_item_parent(attr2)
+        assert n1 and n2
+        assert self.g.has_node(n1)
+        assert self.g.has_node(n2)
+        self.g.add_edge(n1, n2, edge_item=edge_item)
 
-        if not ok:
-            return False
+    def get_edge_item(self, attr1, attr2):
+        n1 = dpg.get_item_parent(attr1)
+        n2 = dpg.get_item_parent(attr2)
+        assert n1 and n2
+        assert self.g.has_node(n1)
+        assert self.g.has_node(n2)
 
-        for e in attris:
-            self.attri_graph.add_node(e)
-            self._attri2node[e] = node
+    def get_adj_node_by_attr(self, attr:int):
+        pass
 
-        self._node2attr[node] = attris
-        return True
+    def get_adj_node_by_node(self, node:WidgetNode):
+        pass
 
-    def unregister_node(self, node:Widget):
-        attris = self._node2attr.get(node, [])
-        if len(attris) > 0:
-            del self._node2attr[node]
+    def get_node_by_attr(self, attr:int):
+        pass
 
-        for e in attris:
-            if e in self._attri2node.keys():
-                del self._attri2node[e]
+    def get_edge_by_attr(self):
+        pass
 
-        self.attri_graph.remove_nodes_from(attris)
+    def get_edge_by_node(self, node:WidgetNode):
+        pass
 
-    def get_node(self, attr:int):
-        return self._attri2node.get(attr, None)
+    def get_edge_by_attr(self, attr:int):
+        pass
 
     def add_widget_edge(self, a1:int, a2:int):
-        n1 = self.get_node(a1)
-        n2 = self.get_node(a2)
-        assert n1 and n2 and n1 != n2
-        self.widget_graph.add_edge(n1, n2)
-        self.attri_graph.add_edge(a1, a2)
+        pass
 
     def remove_widget_edge(self, a1:int, a2:int):
-        n1 = self.get_node(a1)
-        n2 = self.get_node(a2)
-        assert n1 and n2 and n1 != n2
-        self.widget_graph.remove_edge(n1, n2)
-        self.attri_graph.remove_edge(a1, a2)
+        pass
 
     def adjacent_of_widget(self, attr:int):
-        """
-        Returns a list of adjacent widget of the attribute item
-        """
-        adj_attr = self.attri_graph.adj[attr].keys()
-        widgets = []
-        for attr in adj_attr:
-            w = self._attri2node.get(attr, None)
-            w and widgets.append(w)
-        return widgets
+        return []
 
     def get_attribute_edge(self, a1:int, a2:int):
         raise NotImplementedError
         return -1
 
     def adjacent_of_attrbute(self, attr:int):
-        return self.attri_graph.adj[attr].keys()
+        pass
 
     def simple_path_of_widget(self, a1:int, a2:int):
-        n1 = self.get_node(a1)
-        n2 = self.get_node(a2)
-        assert n1 and n2 and n1 != n2
-        return list(nx.all_simple_paths(self.widget_graph, n1, n2))
+        pass
 
     def edge_of_widget(self, a1:int,a2:int):
-        n1 = self.get_node(a1)
-        n2 = self.get_node(a2)
-        assert n1 and n2 and n1 != n2
-        return self.widget_graph.has_edge(n1, n2)
+        pass
 
     def clear(self):
-        self.widget_graph.clear()
-        for nw in self._node2attr.keys():
-            nw.delete()
-
-        self._node2attr = {}
-        self._attri2node = {}
-        self.attri_graph.clear()
+        pass
 
 
 class LenseEditorWidget(Widget):
@@ -514,7 +521,7 @@ class LenseEditorWidget(Widget):
         self._add_node(LenseSurfaceGroup(name='Gauss Lense2',parent=self._editor_id, update_callback=self.callback()))
         self._add_node(LenseSurfaceGroup(name='Lense2',parent=self._editor_id, update_callback=self.callback()))
 
-        self.node_manager = Graph()
+        self.node_manager = Graph(self)
 
 
     def set_lense_data(self, lense_data_dict:List[Dict[str, List[float]]]):
@@ -552,17 +559,6 @@ class LenseEditorWidget(Widget):
 
     def _add_node_link(self, sender:int, app_data:Any, user_data:Any):
         attr1, attr2 = app_data[0], app_data[1]
-        a1, a2 = self.node_manager.adjacent_of_attrbute(attr1), self.node_manager.adjacent_of_attrbute(attr2)
-        for a in a1:
-            edge_item = self.node_manager.get_attribute_edge(a, attr1)
-            dpg.delete_item(edge_item)
-            self.node_manager.remove_widget_edge(a, attr1)
-
-        for a in a2:
-            edge_item = self.node_manager.get_attribute_edge(a, attr2)
-            dpg.delete_item(edge_item)
-            self.node_manager.remove_widget_edge(a, attr2)
-
         link = dpg.add_node_link(attr1,attr2, parent=sender)
         self._invoke_update(event=EditorEventType.EVENT_LINK_ADD)
 
@@ -586,12 +582,10 @@ class LenseEditorWidget(Widget):
         self._add_node(ApertureStop(parent=self._editor_id, value_update_callback=self.callback()))
 
     def _add_node(self, lense_group_node:LenseSurfaceGroup):
-        attris = []
+        attris = dpg.get_item_children(lense_group_node.widget())
         input_attr = lense_group_node.get_attribute('Input')
         ouput_attr = lense_group_node.get_attribute('Output')
-        input_attr and attris.append(input_attr)
-        ouput_attr and attris.append(ouput_attr)
-        self.node_manager.register_node(attris,lense_group_node)
+
 
     def add_node(self, node:LenseSurfaceGroup):
         self._add_node(node)
