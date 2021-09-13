@@ -164,10 +164,10 @@ class LenseSurface(Widget):
         super().__init__(parent=parent,callback=callback)
 
 class LenseSphereSurface(LenseSurface):
-    curvature_radius = widget_property('Curvature Radius', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
-    thickness = widget_property('Thickness', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    curvature_radius = widget_property('Curvature Radius', AttributeValueType.ATTRI_FLOAT,-1000,1100.0,100)
+    thickness = widget_property('Thickness', AttributeValueType.ATTRI_FLOAT,0.0,1000.0,100)
     eta = widget_property('Eta', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
-    aperture_radius = widget_property('Aperture Radius', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    aperture_radius = widget_property('Aperture Radius', AttributeValueType.ATTRI_FLOAT,0.0,1000.0,100)
     def __init__(self, parent: int, callback:Callable[[None],None]):
         super().__init__(parent=parent,callback=callback)
         with dpg.tree_node(label='SphereElement',parent=parent) as self._widget_id:
@@ -610,8 +610,11 @@ class LenseDesignerWidget(Widget):
                 surf = groups[g].get_surface(ind)
                 lense_data.append(surf.dump())
 
+        self._canvas_update(lense_data = lense_data)
+
     def _canvas_update(self, *args, **kwargs):
-        pass
+        self.camera.load_lens_data(kwargs.get('lense_data', []))
+        self._lense_update()
 
     def _lense_update(self):
         self.camera.refocus(0.2)

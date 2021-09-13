@@ -97,7 +97,7 @@ class RealisticCamera:
         self.camera_pos = np.array(camera_pos)
 
         self._elem_count = 0
-        self.load_lens_data([[]])
+        self.load_lens_data([])
         self.set_camera(camera_pos, center, world_up)
 
     def get_resolution(self):
@@ -144,7 +144,7 @@ class RealisticCamera:
     def get_element_count(self):
         return self._elem_count
 
-    def load_lens_data(self, lenses:List[List[float]]):
+    def load_lens_data(self, lenses:List[List[float]]=[[]]):
         wide22 = [
             # curvature radius, thickness, index of refraction, aperture diameter
             [35.98738, 1.21638, 1.54, 23.716],
@@ -193,7 +193,7 @@ class RealisticCamera:
             [-50.945,0,1,37]
         ]
 
-        lenses = dgauss50
+        # lenses = dgauss50
         self._elem_count = len(lenses)
         self._lenses_data = lenses.copy()
         for _ in range(max(0, max_elements - self._elem_count)):
