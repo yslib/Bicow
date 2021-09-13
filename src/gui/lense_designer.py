@@ -1,8 +1,11 @@
 import math
 import dearpygui.dearpygui as dpg
 from typing import List, Any, Callable, Dict
+from networkx.algorithms.centrality.current_flow_betweenness import edge_current_flow_betweenness_centrality
 
 from networkx.classes.function import selfloop_edges
+from numpy.core.arrayprint import SubArrayFormat
+from base import paramtype
 from gui import app
 
 from gui.widget import Widget, widget_property, AttributeValueType
@@ -186,6 +189,21 @@ class LenseSphereSurface(LenseSurface):
         self.aperture_radius = data[3]
 
 
+class ApertureSurface(LenseSurface):
+    thickness = widget_property('Thickness', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    aperture_radius = widget_property('Aperture Radius', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    def __init__(self, parent: int, callback:Callable[[None],None]):
+        super().__init__(parent=parent,callback=callback)
+        self._widget_id = parent
+        self.thickness = 0.0
+        self.aperture_radius = 0.0
+
+    def dump(self):
+        return [ 0.0,self.thickness, 0.0 ,self.aperture_radius]
+
+    def load(self, data:List[float]= [0.0,0.0,0.0,0.0]):
+        self.thickness = data[1]
+        self.aperture_radius = data[3]
 
 class WidgetNode(Widget):
     def __init__(self,*, name:str, parent:int, callback:Callable[[Any],Any]=None):
@@ -199,7 +217,7 @@ class WidgetNode(Widget):
 
     def add_attribute(self, attri_name:str, attri_type:int):
         if attri_name not in self._attri_dict.keys():
-            with dpg.node_attribute(label=attri_name, attribute_type=attri_type, parent=self.widget(),user_data=self) as attri:
+            with dpg.node_attribute(label=attri_name, attribute_type=attri_type, parent=self.widget(),user_data=self.widget()) as attri:
                 self._attri_dict[attri_name] = (attri, {})
                 return attri
         return None
@@ -290,21 +308,6 @@ class InputNode(WidgetNode):
         return self._input_end
 
 
-class Edge:
-    def __init__(self, attr1:int, attr2:int):
-        self.first = attr1
-        self.second = attr2
-        self.first_node:WidgetNode = dpg.get_item_user_data(dpg.get_item_parent(attr1))
-        self.second_node:WidgetNode = dpg.get_item_user_data(dpg.get_item_parent(attr2))
-        self.item_id = dpg.add_node_link(attr1,attr2)
-
-    def __eq__(self, other):
-        """
-        Undirected Graph
-        """
-        return (self.first == other.first_attr_node and self.second == other.second_attr_node) or \
-            (self.first == other.second_attr_node and self.second == other.first_attr_node)
-
 class SceneNode(OutputNode):
     def __init__(self,parent:int, value_update_callback:Callable[[Any], None]=None):
         super().__init__(name='Scene',parent=parent,callback=value_update_callback)
@@ -325,13 +328,14 @@ class FilmNode(InputNode):
 class ApertureStop(MidNode):
     def __init__(self, *, parent: int,value_update_callback:Callable[[Any], None]=None):
         super().__init__(name='Aperture Stop', parent=parent, callback=value_update_callback)
-        self.add_attribute('stop radius',dpg.mvNode_Attr_Static)
-        self.add_value(attri_name='stop radius',
-        value_name='Stop Radius',
-        value_type=AttributeValueType.ATTRI_FLOAT,
-        default_value=10.00,
-        callback=value_update_callback)
+        self.static_attri = self.add_attribute('Aperture', attri_type=dpg.mvNode_Attr_Static)
+        self.aperture_surface = ApertureSurface(self.static_attri, self.callback())
 
+    def get_surface(self, ind:int):
+        return self.aperture_surface
+
+    def get_surface_count(self):
+        return 1
 
 class LenseSurfaceGroup(MidNode):
     def __init__(self,*,name:str,parent:int, update_callback:Callable[[Any], Any]=None):
@@ -430,111 +434,27 @@ class EditorEventType:
     EVENT_UPDATE_ALL = 0xFFF
 
 
-class Graph:
-    def __init__(self, editor):
-        self.g = nx.Graph()
-        self.editor_widget = editor
-
-    def add_node(self, node:int):
-        self.g.add_node(node)
-
-    def remove_node(self, node:int):
-        self.g.remove_node(node)
-
-    def add_edge(self, attr1, attr2, edge_item):
-        n1 = dpg.get_item_parent(attr1)
-        n2 = dpg.get_item_parent(attr2)
-        assert n1 and n2
-        assert self.g.has_node(n1)
-        assert self.g.has_node(n2)
-        self.g.add_edge(n1, n2, edge_item=edge_item)
-
-    def get_edge_item(self, attr1, attr2):
-        n1 = dpg.get_item_parent(attr1)
-        n2 = dpg.get_item_parent(attr2)
-        assert n1 and n2
-        assert self.g.has_node(n1)
-        assert self.g.has_node(n2)
-
-    def get_adj_node_by_attr(self, attr:int):
-        pass
-
-    def get_adj_node_by_node(self, node:WidgetNode):
-        pass
-
-    def get_node_by_attr(self, attr:int):
-        pass
-
-    def get_edge_by_attr(self):
-        pass
-
-    def get_edge_by_node(self, node:WidgetNode):
-        pass
-
-    def get_edge_by_attr(self, attr:int):
-        pass
-
-    def add_widget_edge(self, a1:int, a2:int):
-        pass
-
-    def remove_widget_edge(self, a1:int, a2:int):
-        pass
-
-    def adjacent_of_widget(self, attr:int):
-        return []
-
-    def get_attribute_edge(self, a1:int, a2:int):
-        raise NotImplementedError
-        return -1
-
-    def adjacent_of_attrbute(self, attr:int):
-        pass
-
-    def simple_path_of_widget(self, a1:int, a2:int):
-        pass
-
-    def edge_of_widget(self, a1:int,a2:int):
-        pass
-
-    def clear(self):
-        pass
-
-
 class LenseEditorWidget(Widget):
     def __init__(self,*,update_callback:Callable[[Any],None], parent: int):
         super().__init__(parent=parent, callback=update_callback)
-        self._link_list = []
-
         self._lense_data:List[Dict[str, List[float]]]= []
         self._valid_lenses = False
         self._editor_id = -1
-        with dpg.node_editor(parent=parent,callback=self._add_node_link, delink_callback=self._delete_link) as self._widget_id:
+        with dpg.node_editor(parent=parent,callback=self._link_add_callback, delink_callback=self._link_delete_callback) as self._widget_id:
             pass
 
-        dpg.add_button(label='Add Lense', callback=self._add_new_node)
-
         self._editor_id = self.widget()
+        self.widget_g = nx.Graph()
+        self.attri_g = nx.Graph()
 
         self._add_default_node()
-        self._add_node(LenseSurfaceGroup(name='Lense1',parent=self._editor_id, update_callback=self.callback()))
-        self._add_node(LenseSurfaceGroup(name='Gauss Lense1',parent=self._editor_id, update_callback=self.callback()))
-        self._add_node(LenseSurfaceGroup(name='Gauss Lense2',parent=self._editor_id, update_callback=self.callback()))
-        self._add_node(LenseSurfaceGroup(name='Lense2',parent=self._editor_id, update_callback=self.callback()))
 
-        self.node_manager = Graph(self)
+        self._add_node_impl(LenseSurfaceGroup(name='Lense1',parent=self._editor_id, update_callback=self.callback()))
+        self._add_node_impl(LenseSurfaceGroup(name='Gauss Lense1',parent=self._editor_id, update_callback=self.callback()))
+        self._add_node_impl(LenseSurfaceGroup(name='Gauss Lense2',parent=self._editor_id, update_callback=self.callback()))
+        self._add_node_impl(LenseSurfaceGroup(name='Lense2',parent=self._editor_id, update_callback=self.callback()))
 
-
-    def set_lense_data(self, lense_data_dict:List[Dict[str, List[float]]]):
-        """
-        Sets lense data
-
-        Note: this function will invoke update_callback
-        """
-        self._clear_lense()
-        self._lense_data = lense_data_dict.copy()
-
-        self._invoke_update(event=EditorEventType.EVENT_NODE_UPDATE)
-
+        dpg.add_button(label='Add Lense', callback=lambda s,a,u:self.add_lense_group(LenseSurfaceGroup(name='LenseGroup',parent=self._editor_id, update_callback=self.callback())))
 
     def get_lense_data(self):
         """
@@ -550,50 +470,118 @@ class LenseEditorWidget(Widget):
         """
         return self._valid_lenses
 
-    def clear_lenses(self):
-        """
-        Note: this function will invoke update_callback
-        """
-        self._clear_lense()
-        self._invoke_update(event=EditorEventType.EVENT_NODE_DELETE_ALL)
+    def get_lense_group(self):
+        res = list(nx.all_simple_paths(self.widget_g, self._scene_node.widget(), self._film_node.widget()))
+        ret = []
+        if len(res) > 0:
+            ret = list(map(lambda x: dpg.get_item_user_data(x), res[0]))
+        return ret
 
-    def _add_node_link(self, sender:int, app_data:Any, user_data:Any):
-        attr1, attr2 = app_data[0], app_data[1]
-        link = dpg.add_node_link(attr1,attr2, parent=sender)
+    def _link_add_callback(self, sender:int, app_data:Any, user_data:Any):
+        """
+        input_end
+        output_end
+        """
+        self._add_link_impl(app_data[0], app_data[1])
         self._invoke_update(event=EditorEventType.EVENT_LINK_ADD)
 
-    def _delete_link(self, sender:int, app_data:Any, user_data:Any):
-        print('delete_link:', sender, app_data, user_data)
-        dpg.delete_item(app_data)
+    def _link_delete_callback(self, sender:int, app_data:Any, user_data:Any):
+        """
+        app_data: edge item
+        """
+        self._remove_link_impl(app_data)
         self._invoke_update(event=EditorEventType.EVENT_LINK_DELETE)
 
-    def _clear_lense(self):
-        self.node_manager.clear()
+    def _add_link_impl(self, output_end, input_end):
+        output_node, input_node = dpg.get_item_user_data(output_end), dpg.get_item_user_data(input_end)
+        deleted_attri_edge = []
+        deleted_node_edge = []
+        for nbr, datadict in self.attri_g.adj[input_end].items():
+            deleted_attri_edge.append((nbr, input_end))
+            edge_item = datadict.get('edge_item', None)
+            if edge_item:
+                dpg.delete_item(edge_item)
+                adj_output_node = dpg.get_item_user_data(nbr)
+                deleted_node_edge.append((adj_output_node, input_node))
 
-    def _add_new_node(self, s, a, u):
-        """
-        callback
-        """
-        self.add_node(None)
+        self.attri_g.remove_edges_from(deleted_attri_edge)
+        self.widget_g.remove_edges_from(deleted_node_edge)
+
+        link = dpg.add_node_link(output_end, input_end, parent=self.widget(), user_data={'input_node':input_node,'output_node':output_node,'input_end':input_end,'output_end':output_end})
+        self.widget_g.add_edge(output_node, input_node, edge_item=link)
+        self.attri_g.add_edge(output_end, input_end, edge_item=link)
+
+    def _remove_link_impl(self, edge_item):
+        udata = dpg.get_item_user_data(edge_item)
+        input_node, output_node = udata['input_node'], udata['output_node']
+        self.widget_g.remove_edge(output_node,input_node)
+        self.attri_g.remove_edge(udata['output_end'],udata['input_end'])
+        dpg.delete_item(edge_item)
+
+    def _add_node_impl(self, lense_group_node):
+        self.widget_g.add_node(lense_group_node.widget())
+        if isinstance(lense_group_node, SceneNode):
+            self.attri_g.add_node(lense_group_node.output_end())
+        elif isinstance(lense_group_node, FilmNode):
+            self.attri_g.add_node(lense_group_node.input_end())
+        else:
+            self.attri_g.add_node(lense_group_node.input_end())
+            self.attri_g.add_node(lense_group_node.output_end())
+
+    def _remove_node_impl(self, lense_group_node):
+        item = lense_group_node.widget()
+        self.widget_g.remove_edge(item)
+        attri_ends = []
+        if isinstance(lense_group_node, SceneNode):
+            attri_ends.append(lense_group_node.output_end())
+        elif isinstance(lense_group_node, FilmNode):
+            attri_ends.append(lense_group_node.input_end())
+        else:
+            attri_ends.append(lense_group_node.input_end())
+            attri_ends.append(lense_group_node.output_end())
+
+        deleted_edge = []
+        for end in attri_ends:
+            for nbr, datadict in self.attri_g.adj[end].items():
+                edge_item = datadict['edge_item']
+                deleted_edge.append((nbr, end))
+                dpg.delete_item(edge_item)
+
+        self.attri_g.remove_edges_from(deleted_edge)
+        lense_group_node.delete()
+
+    def _remove_all_node_impl(self):
+        map(lambda x: self._remove_node_impl(dpg.get_item_user_data(x)), list(self.widget_g.nodes))
 
     def _add_default_node(self):
-        self._add_node(SceneNode(self._editor_id, self.callback()))
-        self._add_node(FilmNode(self._editor_id, self.callback()))
-        self._add_node(ApertureStop(parent=self._editor_id, value_update_callback=self.callback()))
+        self._scene_node = SceneNode(self._editor_id, self.callback())
+        self._film_node = FilmNode(self._editor_id, self.callback())
+        self._aperture_stop = ApertureStop(parent=self._editor_id, value_update_callback=self.callback())
+        self._add_node_impl(self._scene_node)
+        self._add_node_impl(self._film_node)
+        self._add_node_impl(self._aperture_stop)
 
-    def _add_node(self, lense_group_node:LenseSurfaceGroup):
-        attris = dpg.get_item_children(lense_group_node.widget())
-        input_attr = lense_group_node.get_attribute('Input')
-        ouput_attr = lense_group_node.get_attribute('Output')
-
-
-    def add_node(self, node:LenseSurfaceGroup):
-        self._add_node(node)
+    def add_lense_group(self, node:LenseSurfaceGroup):
+        self._add_node_impl(node)
         self._invoke_update(event=EditorEventType.EVENT_NODE_ADD)
 
-    def remove_node(self, nw:Widget):
-        self.node_manager.unregister_node(nw)
+    def remove_lense_group(self, nw:Widget):
+        self._remove_node_impl(nw)
         self._invoke_update(event=EditorEventType.EVENT_NODE_DELETE)
+
+    def set_lense_data(self, lense_data_dict:List[Dict[str, List[float]]]):
+        """
+        Sets lense data
+
+        Note: this function will invoke update_callback
+        """
+        self._remove_all_node_impl()
+        self._lense_data = lense_data_dict.copy()
+        """
+        TODO::
+        """
+        self._invoke_update(event=EditorEventType.EVENT_NODE_UPDATE)
+
 
 class LenseDesignerWidget(Widget):
 
@@ -614,9 +602,13 @@ class LenseDesignerWidget(Widget):
         """
         Update Realistic camera here
         """
-        print('_editor_update')
-        print(args, kwargs)
-
+        groups = self._node_editor.get_lense_group()
+        lense_data = []
+        for g in range(1, len(groups) - 2):
+            c = groups[g].get_surface_count()
+            for ind in range(c):
+                surf = groups[g].get_surface(ind)
+                lense_data.append(surf.dump())
 
     def _canvas_update(self, *args, **kwargs):
         pass
