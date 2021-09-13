@@ -576,6 +576,7 @@ class RealisticCamera:
                 y = r - i * 0.01
                 ori, dir = ti.Vector([0.0,0.0,0.0]), ti.Vector([y, 0.0, self.rear_z()])
                 ok, a, b = self.gen_ray_from_film(ori, dir)
+                print('in taichi', ok)
                 if not ok:
                     continue
                 self.draw_ray_from_film(ori, dir, 0)

@@ -1,12 +1,7 @@
 import math
 import dearpygui.dearpygui as dpg
 from typing import List, Any, Callable, Dict
-from networkx.algorithms.centrality.current_flow_betweenness import edge_current_flow_betweenness_centrality
-
-from networkx.classes.function import selfloop_edges
-from numpy.core.arrayprint import SubArrayFormat
-from base import paramtype
-from gui import app
+from base.msg_queue import msg
 
 from gui.widget import Widget, widget_property, AttributeValueType
 from demo.realistic import RealisticCamera
@@ -189,21 +184,6 @@ class LenseSphereSurface(LenseSurface):
         self.aperture_radius = data[3]
 
 
-class ApertureSurface(LenseSurface):
-    thickness = widget_property('Thickness', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
-    aperture_radius = widget_property('Aperture Radius', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
-    def __init__(self, parent: int, callback:Callable[[None],None]):
-        super().__init__(parent=parent,callback=callback)
-        self._widget_id = parent
-        self.thickness = 0.0
-        self.aperture_radius = 0.0
-
-    def dump(self):
-        return [ 0.0,self.thickness, 0.0 ,self.aperture_radius]
-
-    def load(self, data:List[float]= [0.0,0.0,0.0,0.0]):
-        self.thickness = data[1]
-        self.aperture_radius = data[3]
 
 class WidgetNode(Widget):
     def __init__(self,*, name:str, parent:int, callback:Callable[[Any],Any]=None):
@@ -307,23 +287,53 @@ class InputNode(WidgetNode):
     def input_end(self):
         return self._input_end
 
+class SceneNodeParam(Widget):
+    focus_depth = widget_property(name='FocusDepth', property_type=AttributeValueType.ATTRI_FLOAT,min_value=0.0, max_value=10000.0,width=100)
+    def __init__(self, *, parent: int, callback: Callable[[Any], None]):
+        super().__init__(parent=parent, callback=callback)
+        self._widget_id = parent
+        self.focus_depth = 1.0
 
 class SceneNode(OutputNode):
     def __init__(self,parent:int, value_update_callback:Callable[[Any], None]=None):
         super().__init__(name='Scene',parent=parent,callback=value_update_callback)
-        self.add_attribute(attri_name='focus depth',attri_type=dpg.mvNode_Attr_Static)
-        self.add_value(value_name='Focus depth',attri_name='focus depth', value_type=AttributeValueType.ATTRI_FLOAT,default_value=10.0,callback=value_update_callback)
+        attri = self.add_attribute(attri_name='focus depth',attri_type=dpg.mvNode_Attr_Static)
+        self._param = SceneNodeParam(parent=attri,callback=self.callback())
+
+    def get_focus_depth(self):
+        return self._param.focus_depth
+
+class FilmNodeParam(Widget):
+    film_size = widget_property(name='FilmSize', property_type=AttributeValueType.ATTRI_FLOATX,min_value=0.0,max_value=1000.0,size=2,width=100)
+    def __init__(self, *, parent: int, callback: Callable[[Any], None]):
+        super().__init__(parent=parent, callback=callback)
+        self._widget_id = parent
+        self.film_size = (36.00,24.00)
 
 class FilmNode(InputNode):
     def __init__(self, parent:int,value_update_callback:Callable[[Any], None]=None):
         super().__init__(name='Film',parent=parent,callback=value_update_callback)
-        self.add_attribute(attri_name='film size',attri_type=dpg.mvNode_Attr_Static)
-        self.add_value(attri_name='film size',
-        value_name='Film Size',
-        value_type=AttributeValueType.ATTRI_FLOATX,
-        default_value=(36,24),
-        size=2,
-        callback=value_update_callback)
+        attri = self.add_attribute(attri_name='film size',attri_type=dpg.mvNode_Attr_Static)
+        self._param = FilmNodeParam(parent=attri,callback=self.callback())
+
+    def get_film_size(self):
+        return self._param.film_size
+
+class ApertureSurface(LenseSurface):
+    thickness = widget_property('Thickness', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    aperture_radius = widget_property('Aperture Radius', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
+    def __init__(self, parent: int, callback:Callable[[None],None]):
+        super().__init__(parent=parent,callback=callback)
+        self._widget_id = parent
+        self.thickness = 0.0
+        self.aperture_radius = 0.0
+
+    def dump(self):
+        return [ 0.0,self.thickness, 0.0 ,self.aperture_radius]
+
+    def load(self, data:List[float]= [0.0,0.0,0.0,0.0]):
+        self.thickness = data[1]
+        self.aperture_radius = data[3]
 
 class ApertureStop(MidNode):
     def __init__(self, *, parent: int,value_update_callback:Callable[[Any], None]=None):
@@ -399,6 +409,14 @@ class LenseSurfaceGroup(MidNode):
         self._clear_surface_data()
         self._invoke_update()
 
+    @staticmethod
+    def create_sphere_lense_group(*, name, parent, group_data:List[List[float]], callback=None):
+        group = LenseSurfaceGroup(name=name, parent=parent,update_callback=callback)
+        group.block_callback(True)
+        group.load(group_data)
+        group.block_callback(False)
+        return group
+
 
 
 dgauss50 = [
@@ -449,33 +467,7 @@ class LenseEditorWidget(Widget):
 
         self._add_default_node()
 
-        self._add_node_impl(LenseSurfaceGroup(name='Lense1',parent=self._editor_id, update_callback=self.callback()))
-        self._add_node_impl(LenseSurfaceGroup(name='Gauss Lense1',parent=self._editor_id, update_callback=self.callback()))
-        self._add_node_impl(LenseSurfaceGroup(name='Gauss Lense2',parent=self._editor_id, update_callback=self.callback()))
-        self._add_node_impl(LenseSurfaceGroup(name='Lense2',parent=self._editor_id, update_callback=self.callback()))
-
         dpg.add_button(label='Add Lense', callback=lambda s,a,u:self.add_lense_group(LenseSurfaceGroup(name='LenseGroup',parent=self._editor_id, update_callback=self.callback())))
-
-    def get_lense_data(self):
-        """
-        Returned data makes sense only
-        when is_valid_lenses() returns True
-        """
-        return self._lense_data.copy()
-
-    def is_valid_lenses(self):
-        """
-        Returns True if the lenses is valid otherwise returns False
-        (e.g. links between lense groups are not closed)
-        """
-        return self._valid_lenses
-
-    def get_lense_group(self):
-        res = list(nx.all_simple_paths(self.widget_g, self._scene_node.widget(), self._film_node.widget()))
-        ret = []
-        if len(res) > 0:
-            ret = list(map(lambda x: dpg.get_item_user_data(x), res[0]))
-        return ret
 
     def _link_add_callback(self, sender:int, app_data:Any, user_data:Any):
         """
@@ -530,7 +522,7 @@ class LenseEditorWidget(Widget):
 
     def _remove_node_impl(self, lense_group_node):
         item = lense_group_node.widget()
-        self.widget_g.remove_edge(item)
+        self.widget_g.remove_node(item)
         attri_ends = []
         if isinstance(lense_group_node, SceneNode):
             attri_ends.append(lense_group_node.output_end())
@@ -551,36 +543,79 @@ class LenseEditorWidget(Widget):
         lense_group_node.delete()
 
     def _remove_all_node_impl(self):
-        map(lambda x: self._remove_node_impl(dpg.get_item_user_data(x)), list(self.widget_g.nodes))
+        list(map(lambda x: self._remove_node_impl(dpg.get_item_user_data(x)), list(self.widget_g.nodes)))
 
     def _add_default_node(self):
         self._scene_node = SceneNode(self._editor_id, self.callback())
         self._film_node = FilmNode(self._editor_id, self.callback())
-        self._aperture_stop = ApertureStop(parent=self._editor_id, value_update_callback=self.callback())
         self._add_node_impl(self._scene_node)
         self._add_node_impl(self._film_node)
-        self._add_node_impl(self._aperture_stop)
 
     def add_lense_group(self, node:LenseSurfaceGroup):
         self._add_node_impl(node)
         self._invoke_update(event=EditorEventType.EVENT_NODE_ADD)
 
     def remove_lense_group(self, nw:Widget):
+        print('remove_lense_group')
         self._remove_node_impl(nw)
         self._invoke_update(event=EditorEventType.EVENT_NODE_DELETE)
 
-    def set_lense_data(self, lense_data_dict:List[Dict[str, List[float]]]):
-        """
-        Sets lense data
+    def get_lense_group(self):
+        res = list(nx.all_simple_paths(self.widget_g, self._scene_node.widget(), self._film_node.widget()))
+        ret = []
+        if len(res) > 0:
+            ret = list(map(lambda x: dpg.get_item_user_data(x), res[0]))
+        return ret
 
-        Note: this function will invoke update_callback
-        """
+    def get_lense_data(self):
+        groups = self.get_lense_group()
+        lense_data = []
+        for g in range(1, len(groups) - 2):  # excludes scene and film node
+            c = groups[g].get_surface_count()
+            for ind in range(c):
+                surf = groups[g].get_surface(ind)
+                lense_data.append(surf.dump())
+        return lense_data
+
+    def set_lense_data(self, lense_data:List[List[float]]):
         self._remove_all_node_impl()
-        self._lense_data = lense_data_dict.copy()
-        """
-        TODO::
-        """
+        self._add_default_node()
+        stack = []
+        output_end = self._scene_node.output_end()
+        for surf in lense_data:
+            if surf[2] != 1.0 and surf[0] != 0:  # surface begin
+                stack.append(surf)
+            elif surf[2] == 1.0 and surf[0] != 0: # surface end
+                stack.append(surf)
+                lense_group = LenseSurfaceGroup.create_sphere_lense_group(name='LenseGroup',parent=self._editor_id,group_data=stack, callback=self.callback())
+                self._add_node_impl(lense_group)
+                input_end = lense_group.input_end()
+                self._add_link_impl(output_end=output_end,input_end=input_end)
+                output_end = lense_group.output_end()
+                stack = []
+            elif surf[0] == 0.0 and surf[2] == 0.0:  # aperture surface
+                aperture = ApertureStop(parent=self._editor_id,value_update_callback=self.callback())
+                aperture.block_callback(True)
+                aperture.get_surface(0).load(surf)
+                self._add_node_impl(aperture)
+                input_end = aperture.input_end()
+                self._add_link_impl(output_end=output_end,input_end=input_end)
+                output_end = aperture.output_end()
+                aperture.block_callback(False)
+
+        if len(stack) > 0:
+            print('Wrong lense data')
+
+        self._add_link_impl(output_end=output_end, input_end=self._film_node.input_end())
+        # closed
+
         self._invoke_update(event=EditorEventType.EVENT_NODE_UPDATE)
+
+    def get_film_size(self):
+        return self._film_node.get_film_size()
+
+    def get_focus_depth(self):
+        return self._scene_node.get_focus_depth()
 
 
 class LenseDesignerWidget(Widget):
@@ -596,31 +631,30 @@ class LenseDesignerWidget(Widget):
             world_up = [0.0, 1.0, 0.0]
             self.camera = RealisticCamera(pos, center, world_up)
 
-        self._lense_update()
+            dpg.add_button(label='Add Preset', callback=lambda s,a,u: self._node_editor.set_lense_data(dgauss50))
 
     def _editor_update(self, *args, **kwargs):
         """
         Update Realistic camera here
         """
-        groups = self._node_editor.get_lense_group()
-        lense_data = []
-        for g in range(1, len(groups) - 2):
-            c = groups[g].get_surface_count()
-            for ind in range(c):
-                surf = groups[g].get_surface(ind)
-                lense_data.append(surf.dump())
-
+        lense_data = self._node_editor.get_lense_data()
         self._canvas_update(lense_data = lense_data)
 
     def _canvas_update(self, *args, **kwargs):
+        print('_canvas_update')
         self.camera.load_lens_data(kwargs.get('lense_data', []))
-        self._lense_update()
+        @msg
+        def a():
+            self._lense_update()
+        a()
 
     def _lense_update(self):
-        self.camera.refocus(0.2)
+        self.camera.refocus(self._node_editor.get_focus_depth())
+        # self.camera.recompute_exit_pupil()
         lenses = self.camera.get_lenses_data()
         self.camera.gen_draw_rays_from_film()
         ray_points = self.camera.get_ray_points()
+        print(ray_points[0])
 
         self._lense_canvas.draw_lenses(np.array(lenses))
         self._lense_canvas.draw_rays(ray_points, self.camera.get_element_count() + 2, color=[0, 0, 255])

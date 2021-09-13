@@ -74,7 +74,7 @@ class AttributeValueType:
     ATTRI_FLOATX = 1
     ATTRI_INT = 2
 
-def widget_property(name:str, property_type:int, min_value:Any, max_value:Any, width=20,height=10):
+def widget_property(name:str, property_type:int, min_value:Any, max_value:Any, width=20,height=10,size=4):
     storage_name = '_' + name
     @property
     def prop(self:Widget):
@@ -91,6 +91,16 @@ def widget_property(name:str, property_type:int, min_value:Any, max_value:Any, w
                     max_value=max_value,
                     width=width,
                     parent=self.widget(),
+                    callback=self.property_changed)
+            elif property_type == AttributeValueType.ATTRI_FLOATX:
+                item_id = dpg.add_input_floatx(
+                    label=name,
+                    default_value=value,
+                    min_value=min_value,
+                    max_value=max_value,
+                    width=width,
+                    parent=self.widget(),
+                    size=size,
                     callback=self.property_changed)
             elif property_type == AttributeValueType.ATTRI_INT:
                 item_id = dpg.add_input_int(
