@@ -4,6 +4,7 @@ from dearpygui.logger import mvLogger
 from typing import Callable, Any
 
 from numpy.lib.function_base import select
+from base import paramtype
 from base.msg_queue import msg
 
 _logger = None
@@ -73,8 +74,9 @@ class AttributeValueType:
     ATTRI_FLOAT = 0
     ATTRI_FLOATX = 1
     ATTRI_INT = 2
+    ATTRI_BOOL = 3
 
-def widget_property(name:str, property_type:int, min_value:Any, max_value:Any, width=20,height=10,size=4):
+def widget_property(name:str, property_type:int, min_value:Any=None, max_value:Any=None, width=20,height=10,size=4):
     storage_name = '_' + name
     @property
     def prop(self:Widget):
@@ -111,6 +113,8 @@ def widget_property(name:str, property_type:int, min_value:Any, max_value:Any, w
                     width=width,
                     parent=self.widget(),
                     callback=self.property_changed)
+            elif property_type == AttributeValueType.ATTRI_BOOL:
+                item_id = dpg.add_checkbox(label=name,parent=self.widget(),default_value=value,callback=self.property_changed)
             setattr(self, storage_name, item_id)
         else:
             item_id = getattr(self, storage_name)

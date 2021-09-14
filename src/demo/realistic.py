@@ -571,15 +571,16 @@ class RealisticCamera:
         draw the bound ray
         """
         r = self.aperture_radius[self._elem_count - 1]
+        step = 0.01
+        count = ti.cast(r / step,ti.i32)
         for j in range(1):
-            for i in range(100):
-                y = r - i * 0.01
+            for i in range(count):
+                y = r - i * step
                 ori, dir = ti.Vector([0.0,0.0,0.0]), ti.Vector([y, 0.0, self.rear_z()])
                 ok, a, b = self.gen_ray_from_film(ori, dir)
-                print('in taichi', ok)
-                if not ok:
-                    continue
-                self.draw_ray_from_film(ori, dir, 0)
+                if ok:
+                    self.draw_ray_from_film(ori, dir, 0)
+                    break
 
     @ti.kernel
     def gen_draw_rays_from_scene(self):

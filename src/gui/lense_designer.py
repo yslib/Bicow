@@ -64,7 +64,11 @@ class LenseCanvasWidget(Widget):
         length = 0.0
         max_radius = 0.0
         for i in range(len(lenses)):
-            length += lenses[i][1]
+            thickness = lenses[i][1]
+            if math.isnan(thickness):
+                continue
+            else:
+                length += lenses[i][1]
             max_radius = max(max_radius, lenses[i][3] / 2.0)
 
         self._update_canvas(length, max_radius)
@@ -289,10 +293,12 @@ class InputNode(WidgetNode):
 
 class SceneNodeParam(Widget):
     focus_depth = widget_property(name='FocusDepth', property_type=AttributeValueType.ATTRI_FLOAT,min_value=0.0, max_value=10000.0,width=100)
+    enable_focus = widget_property(name='EnableFocus', property_type=AttributeValueType.ATTRI_BOOL, width=100)
     def __init__(self, *, parent: int, callback: Callable[[Any], None]):
         super().__init__(parent=parent, callback=callback)
         self._widget_id = parent
         self.focus_depth = 1.0
+        self.enable_focus = True
 
 class SceneNode(OutputNode):
     def __init__(self,parent:int, value_update_callback:Callable[[Any], None]=None):
@@ -302,6 +308,9 @@ class SceneNode(OutputNode):
 
     def get_focus_depth(self):
         return self._param.focus_depth
+
+    def get_focus_state(self):
+        return self._param.enable_focus
 
 class FilmNodeParam(Widget):
     film_size = widget_property(name='FilmSize', property_type=AttributeValueType.ATTRI_FLOATX,min_value=0.0,max_value=1000.0,size=2,width=100)
@@ -570,7 +579,7 @@ class LenseEditorWidget(Widget):
     def get_lense_data(self):
         groups = self.get_lense_group()
         lense_data = []
-        for g in range(1, len(groups) - 2):  # excludes scene and film node
+        for g in range(1, len(groups) - 1):  # excludes scene and film node
             c = groups[g].get_surface_count()
             for ind in range(c):
                 surf = groups[g].get_surface(ind)
@@ -617,6 +626,9 @@ class LenseEditorWidget(Widget):
     def get_focus_depth(self):
         return self._scene_node.get_focus_depth()
 
+    def get_focus_state(self):
+        return self._scene_node.get_focus_state()
+
 
 class LenseDesignerWidget(Widget):
 
@@ -641,20 +653,16 @@ class LenseDesignerWidget(Widget):
         self._canvas_update(lense_data = lense_data)
 
     def _canvas_update(self, *args, **kwargs):
-        print('_canvas_update')
-        self.camera.load_lens_data(kwargs.get('lense_data', []))
         @msg
-        def a():
-            self._lense_update()
-        a()
+        def mainthread_event():
+            self._lense_update(kwargs['lense_data'])
+        mainthread_event()
 
-    def _lense_update(self):
-        self.camera.refocus(self._node_editor.get_focus_depth())
-        # self.camera.recompute_exit_pupil()
-        lenses = self.camera.get_lenses_data()
+    def _lense_update(self, lense_data):
+        self.camera.load_lens_data(lense_data)
+        self._node_editor.get_focus_state() and self.camera.refocus(self._node_editor.get_focus_depth())
         self.camera.gen_draw_rays_from_film()
         ray_points = self.camera.get_ray_points()
-        print(ray_points[0])
-
-        self._lense_canvas.draw_lenses(np.array(lenses))
+        new_lense_data = self.camera.get_lenses_data()
+        self._lense_canvas.draw_lenses(np.array(new_lense_data))
         self._lense_canvas.draw_rays(ray_points, self.camera.get_element_count() + 2, color=[0, 0, 255])
