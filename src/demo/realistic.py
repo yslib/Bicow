@@ -576,7 +576,7 @@ class RealisticCamera:
         for j in range(1):
             for i in range(count):
                 y = r - i * step
-                ori, dir = ti.Vector([0.0,0.0,0.0]), ti.Vector([y, 0.0, self.rear_z()])
+                ori, dir = ti.Vector([0.0, 0.0, 0.0]), ti.Vector([y, 0.0, self.rear_z()])
                 ok, a, b = self.gen_ray_from_film(ori, dir)
                 if ok:
                     self.draw_ray_from_film(ori, dir, 0)
