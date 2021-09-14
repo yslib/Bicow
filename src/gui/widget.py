@@ -1,11 +1,8 @@
-from math import log
 import dearpygui.dearpygui as dpg
 from dearpygui.logger import mvLogger
 from typing import Callable, Any
 
-from numpy.lib.function_base import select
 from base import paramtype
-from base.msg_queue import msg
 
 _logger = None
 
@@ -76,7 +73,7 @@ class AttributeValueType:
     ATTRI_INT = 2
     ATTRI_BOOL = 3
 
-def widget_property(name:str, property_type:int, min_value:Any=None, max_value:Any=None, width=20,height=10,size=4):
+def PropertyWidget(name:str, property_type:int, min_value:Any=None, max_value:Any=None, width=20,height=10,size=4):
     storage_name = '_' + name
     @property
     def prop(self:Widget):
