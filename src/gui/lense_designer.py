@@ -7,21 +7,29 @@ from gui.widget import Widget, PropertyWidget, AttributeValueType
 from demo.realistic import RealisticCamera
 import numpy as np
 import networkx as nx
+from . import app
 
 class LenseCanvasWidget(Widget):
     def __init__(self, *, parent: int, film_height=24.0, callback:Callable[[None],None]=None):
         super().__init__(parent=parent, callback=callback)
-        self.height = 400
-        self.width = 800
-        with dpg.drawlist(label='lenses',parent=parent, width=self.width, height=self.height) as self._widget_id:
-            self.film_height = film_height
-            self.axis_y = int(self.height / 2.0)
-            self.origin_z = int(self.width / 2.0)
-            self.scale = 5.0
-            self.lense_length = 0.0
-            self.lense_radius = 0.0
-            self.world_matrix = np.array([[1.0,0.0,0.0], [0.0,1.0 ,0.0],[0.0,0.0,1.0]])
-            self.screen_matrix = np.array([[1.0,0.0,0.0], [0.0,1.0 ,0.0],[0.0,0.0,1.0]])
+        height = 400
+        with dpg.child(parent=parent,autosize_x=True,no_scrollbar=True,height = 400) as self._widget_id:
+            with dpg.drawlist(label='lenses',parent=self._widget_id) as self._drawlist_id:
+                self.film_height = film_height
+                self.axis_y = int(height / 2.0)
+                self.origin_z = 0
+                self.scale = 5.0
+                self.lense_length = 0.0
+                self.max_radius = 0.0
+                self.world_matrix = np.array([[1.0,0.0,0.0], [0.0,1.0 ,0.0],[0.0,0.0,1.0]])
+                self.screen_matrix = np.array([[1.0,0.0,0.0], [0.0,1.0 ,0.0],[0.0,0.0,1.0]])
+
+        # self._drawlist_id = self.widget()
+        app.viewport_resize_callback.append(lambda w,h:self._draw_impl(self.lense_length, self.max_radius, w, dpg.get_item_height(self.widget())))
+
+
+    def drawlist(self):
+        return self._drawlist_id
 
     def _setup_transform(self,scale: float, origin_z:float, axis_y:float):
         """
@@ -45,69 +53,73 @@ class LenseCanvasWidget(Widget):
         return (self.world_to_screen @ np.array([point[0], point[1], 1.0]))[0:2]
 
     def _draw_frame(self, padding = 5):
-        s = dpg.get_item_rect_size(self.widget())
-        print(s)
+        rect = dpg.get_item_rect_size(self.widget())
         poly = [
             [padding,padding], # topleft
-            [s[0] - padding, padding], # topright
-            [s[0]- padding, s[1] - padding], # bottomright
-            [padding,s[1] - padding] # bottomleft
+            [rect[0] - padding, padding], # topright
+            [rect[0]- padding, rect[1] - padding], # bottomright
+            [padding,rect[1] - padding] # bottomleft
         ]
-        dpg.draw_polyline(poly, parent=self.widget(),closed=True)
+        dpg.draw_polyline(poly, parent=self.drawlist(),closed=True)
 
-    def _update_canvas(self, length:float, max_radius:float):
+    def _update_canvas(self, lense_length:float, lense_radius:float, w, h):
         """
         Updates whenever the lense size or canvas size changes
         """
         # width = (600 + length * self.scale)
         # height = ( 2 * max_radius ) * self.scale + 100
+        rect = (w, h)
+        dpg.configure_item(self.drawlist(), width=rect[0],height=rect[1])
 
-        self.lense_length = length
-        self.lense_radius = max_radius
-
-        self.scale = min(self.width / self.lense_radius, self.height / self.lense_length)
-        # self.axis_y = height / 2.0
-        self.origin_z = self.width/2.0 + self.lense_length * self.scale / 2.0
+        self.scale = min(rect[0] / lense_radius, rect[1] / lense_length)
+        self.axis_y = rect[1] / 2.0
+        self.origin_z = rect[0]/2.0 + lense_length * self.scale / 2.0
         self._setup_transform(self.scale, self.origin_z, self.axis_y)
-        # dpg.configure_item(self.widget(),width=int(width), height=int(height))
 
-    def draw_lenses(self, lenses:np.ndarray):
+    def _draw_impl(self, lense_length, lense_radius, w, h):
+        self._update_canvas(lense_length, lense_radius, w, h)
         self.clear_drawinglist()
-
-        length = 0.0
-        max_radius = 0.0
-        for i in range(len(lenses)):
-            thickness = lenses[i][1]
-            if math.isnan(thickness):
-                continue
-            else:
-                length += lenses[i][1]
-            max_radius = max(max_radius, lenses[i][3] / 2.0)
-
-        self._update_canvas(length, max_radius)
-
         self._draw_frame()
-
-        z = length
+        z = lense_length
         # draw lense groups
-        for i in range(len(lenses)):
-            is_stop = lenses[i][0] == 0.0
-            r = lenses[i][3]/2.0
+        for i in range(len(self.lenses)):
+            is_stop = self.lenses[i][0] == 0.0
+            r = self.lenses[i][3]/2.0
             if is_stop:
                 self._draw_aperture_stop(z, r, color=[255.0, 255.0, 0.0], thickness=4.0)
             else:
-                a, b = self._draw_arch(z, lenses[i][0], 6.0)
-                if i > 0 and lenses[i - 1][2] != 1 and lenses[i-1][2] != 0:
+                a, b = self._draw_arch(z, self.lenses[i][0], 6.0)
+                if i > 0 and self.lenses[i - 1][2] != 1 and self.lenses[i-1][2] != 0:
                     self._draw_line(a, first)
                     self._draw_line(b, last)  # draw connection between element surface
                 first, last = a, b
 
-            z -= lenses[i][1]
+            z -= self.lenses[i][1]
 
         self._draw_axis()
         self._draw_film()
 
-    def draw_rays(self, rays:np.array, count:int, color=[255.0,255.0,255.0,255.0], thickness=1.0):
+    def draw_lenses(self, lenses:np.ndarray):
+        self.lenses = lenses.copy()
+
+        length = 0.0
+        max_radius = 0.0
+        for i in range(len(self.lenses)):
+            thickness = self.lenses[i][1]
+            if math.isnan(thickness):
+                continue
+            else:
+                length += self.lenses[i][1]
+            max_radius = max(max_radius, self.lenses[i][3] / 2.0)
+
+        self.lense_length = length
+        self.max_radius = max_radius
+
+        rect = dpg.get_item_rect_size(self.widget())
+        self._draw_impl(length, max_radius, rect[0], rect[1])
+
+
+    def draw_bound_rays(self, rays:np.array, count:int, color=[255.0,255.0,255.0,255.0], thickness=1.0):
         points = []
         point1 = []
         for i in range(count):
@@ -117,29 +129,29 @@ class LenseCanvasWidget(Widget):
             points.append(p0)
             point1.append(p1)
 
-        dpg.draw_polyline(points, parent=self.widget(), color=color, thickness=thickness)
-        dpg.draw_polyline(point1, parent=self.widget(), color=color, thickness=thickness)
+        dpg.draw_polyline(points, parent=self.drawlist(), color=color, thickness=thickness)
+        dpg.draw_polyline(point1, parent=self.drawlist(), color=color, thickness=thickness)
 
     def _draw_line(self, p0:List[float], p1:List[float], color=[255.0,255.0,255.0], thickness=1.0):
-        dpg.draw_line(self._world_to_screen(p0), self._world_to_screen(p1), color=color, thickness=thickness,parent=self.widget())
+        dpg.draw_line(self._world_to_screen(p0), self._world_to_screen(p1), color=color, thickness=thickness,parent=self.drawlist())
 
     def _draw_axis(self):
         p0 = self._world_to_screen([self.lense_length + 10,0])
         p1 = self._world_to_screen([-10,0])
-        dpg.draw_line(p0, p1, parent=self.widget())
+        dpg.draw_line(p0, p1, parent=self.drawlist())
 
     def _draw_film(self, color=[255.0,255.0,255.0], thickness = 4.0):
         p0 = self._world_to_screen([0, self.film_height / 2])
         p1 = self._world_to_screen([0, -self.film_height/2])
-        dpg.draw_line(p0, p1, color=color, thickness=thickness, parent=self.widget())
+        dpg.draw_line(p0, p1, color=color, thickness=thickness, parent=self.drawlist())
 
     def _draw_aperture_stop(self, z:float, aperture_radius:float, color=[255.0,255.0,255.0], thickness=2.0):
         p0 = self._world_to_screen([z, aperture_radius + 10])
         p1 = self._world_to_screen([z, aperture_radius])
         p2 = self._world_to_screen([z, -aperture_radius])
         p3 = self._world_to_screen([z, -aperture_radius - 10])
-        dpg.draw_line(p0, p1, color=color, thickness=thickness, parent=self.widget())
-        dpg.draw_line(p2, p3, color=color, thickness=thickness, parent=self.widget())
+        dpg.draw_line(p0, p1, color=color, thickness=thickness, parent=self.drawlist())
+        dpg.draw_line(p2, p3, color=color, thickness=thickness, parent=self.drawlist())
 
     def _draw_arch(self, z: float, curvature_radius:float, aperture_radius:float, color=[255.0,255.0,255.0], thickness=1.0):
         """
@@ -166,11 +178,11 @@ class LenseCanvasWidget(Widget):
             elif i == seg_count - 1:
                 last = [p0, p1]
             points.append(self._world_to_screen([p0, p1]))
-        dpg.draw_polyline(points=points,parent=self.widget(),color=color,thickness=thickness)
+        dpg.draw_polyline(points=points,parent=self.drawlist(),color=color,thickness=thickness)
         return first, last
 
     def clear_drawinglist(self):
-        dpg.delete_item(self.widget(), children_only=True)
+        dpg.delete_item(self.drawlist(), children_only=True)
 
 
 class LenseSurface(Widget):
@@ -568,7 +580,6 @@ class LenseEditorWidget(Widget):
 
     def _remove_selected_links_impl(self):
         selected_links = dpg.get_selected_links(self._editor_id)
-        print(selected_links)
         for link in selected_links:
             self._remove_link_impl(link)
 
@@ -710,7 +721,7 @@ class LenseDesignerWidget(Widget):
 
     def __init__(self, parent: int):
         super().__init__(parent=parent)
-        with dpg.child(parent=parent) as self._widget_id:
+        with dpg.group(parent=parent,horizontal=False) as self._widget_id:
             self._lense_canvas: LenseCanvasWidget = LenseCanvasWidget(parent=self.widget(),callback=self._canvas_update)
             self._node_editor: LenseEditorWidget = LenseEditorWidget(update_callback=self._editor_update, parent=self.widget())
 
@@ -739,4 +750,4 @@ class LenseDesignerWidget(Widget):
         ray_points = self.camera.get_ray_points()
         new_lense_data = self.camera.get_lenses_data()
         self._lense_canvas.draw_lenses(np.array(new_lense_data))
-        self._lense_canvas.draw_rays(ray_points, self.camera.get_element_count() + 2, color=[0, 0, 255])
+        self._lense_canvas.draw_bound_rays(ray_points, self.camera.get_element_count() + 2, color=[0, 0, 255])

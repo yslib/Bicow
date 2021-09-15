@@ -24,6 +24,9 @@ def bind_param_and_event(item:int, param, name, update_callback, type):
 
 
 msgqueue = get_msg_queue()
+
+viewport_resize_callback = []
+
 class App:
     def __init__(self) -> None:
         self._setup_init()
@@ -209,6 +212,10 @@ class App:
         """
         dpg.set_item_height(self._gui_id_app, a[3])
         dpg.set_item_width(self._gui_id_app, a[2])
+
+        global viewport_resize_callback
+        for cb in viewport_resize_callback:
+            cb(a[2], a[3])
 
     def _setup_viewport(self):
         if not dpg.is_viewport_created():
