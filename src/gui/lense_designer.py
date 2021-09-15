@@ -11,19 +11,22 @@ import networkx as nx
 class LenseCanvasWidget(Widget):
     def __init__(self, *, parent: int, film_height=24.0, callback:Callable[[None],None]=None):
         super().__init__(parent=parent, callback=callback)
-        with dpg.drawlist(label='lenses',parent=parent, width=800, height=400) as self._widget_id:
+        self.height = 400
+        self.width = 800
+        with dpg.drawlist(label='lenses',parent=parent, width=self.width, height=self.height) as self._widget_id:
             self.film_height = film_height
-            self.axis_y = 200
-            self.origin_z = 500
-
+            self.axis_y = int(self.height / 2.0)
+            self.origin_z = int(self.width / 2.0)
             self.scale = 5.0
             self.lense_length = 0.0
             self.lense_radius = 0.0
             self.world_matrix = np.array([[1.0,0.0,0.0], [0.0,1.0 ,0.0],[0.0,0.0,1.0]])
             self.screen_matrix = np.array([[1.0,0.0,0.0], [0.0,1.0 ,0.0],[0.0,0.0,1.0]])
 
-
     def _setup_transform(self,scale: float, origin_z:float, axis_y:float):
+        """
+        Updates transform matrix whenever the lense size or canvas size changes
+        """
         self.world_matrix = np.array([
             [scale,0.0,0.0],
             [0.0,scale,0.0],
@@ -41,23 +44,32 @@ class LenseCanvasWidget(Widget):
     def _world_to_screen(self, point: List[float]):
         return (self.world_to_screen @ np.array([point[0], point[1], 1.0]))[0:2]
 
-    def _draw_frame(self):
-        pass
+    def _draw_frame(self, padding = 5):
+        s = dpg.get_item_rect_size(self.widget())
+        print(s)
+        poly = [
+            [padding,padding], # topleft
+            [s[0] - padding, padding], # topright
+            [s[0]- padding, s[1] - padding], # bottomright
+            [padding,s[1] - padding] # bottomleft
+        ]
+        dpg.draw_polyline(poly, parent=self.widget(),closed=True)
 
     def _update_canvas(self, length:float, max_radius:float):
         """
-        Update size of this widget by the given lenses size
+        Updates whenever the lense size or canvas size changes
         """
-        width = (600 + length * self.scale)
-        height = ( 2 * max_radius ) * self.scale + 100
+        # width = (600 + length * self.scale)
+        # height = ( 2 * max_radius ) * self.scale + 100
 
         self.lense_length = length
         self.lense_radius = max_radius
 
-        self.axis_y = height / 2.0
-        self.origin_z = 0.618 * width
+        self.scale = min(self.width / self.lense_radius, self.height / self.lense_length)
+        # self.axis_y = height / 2.0
+        self.origin_z = self.width/2.0 + self.lense_length * self.scale / 2.0
         self._setup_transform(self.scale, self.origin_z, self.axis_y)
-        dpg.configure_item(self.widget(),width=int(width), height=int(height))
+        # dpg.configure_item(self.widget(),width=int(width), height=int(height))
 
     def draw_lenses(self, lenses:np.ndarray):
         self.clear_drawinglist()
@@ -73,6 +85,8 @@ class LenseCanvasWidget(Widget):
             max_radius = max(max_radius, lenses[i][3] / 2.0)
 
         self._update_canvas(length, max_radius)
+
+        self._draw_frame()
 
         z = length
         # draw lense groups
@@ -474,7 +488,7 @@ class LenseEditorWidget(Widget):
 
         with dpg.group(horizontal=False,parent=parent) as self._widget_id:
             self._toolbar = ToolBar(parent=self._widget_id,callback=self.callback())
-            with dpg.node_editor(parent=self._widget_id,callback=self._link_add_callback, delink_callback=self._link_delete_callback, width=1600,height=800) as self._editor_id:
+            with dpg.node_editor(parent=self._widget_id,callback=self._link_add_callback, delink_callback=self._link_delete_callback, height = 800) as self._editor_id:
                 pass
             dpg.configure_item(self._toolbar.add_node_button,callback = lambda s,a,u:self.add_lense_group(LenseSurfaceGroup(name='LenseGroup', parent=self._editor_id, update_callback=self.callback())))
             dpg.configure_item(self._toolbar.clear_all_button,callback = lambda s,a,u:self.clear_lense_group())
@@ -548,13 +562,13 @@ class LenseEditorWidget(Widget):
 
         """
         print("_remove_selected_nodes_impl::dpg.get_selected_nodes may hava a potential BUG, the feature is disabled now")
-        return
         selected_nodes = dpg.get_selected_nodes(self._editor_id)
         for x in selected_nodes:
             self._remove_node_impl(dpg.get_item_user_data(x))
 
     def _remove_selected_links_impl(self):
         selected_links = dpg.get_selected_links(self._editor_id)
+        print(selected_links)
         for link in selected_links:
             self._remove_link_impl(link)
 
@@ -611,16 +625,15 @@ class LenseEditorWidget(Widget):
         self._invoke_update(event=EditorEventType.EVENT_NODE_DELETE)
 
     def auto_arrange(self):
-        w = dpg.get_item_width(self._editor_id)
-        h = dpg.get_item_height(self._editor_id)
+        rect = dpg.get_item_rect_size(self._editor_id)
         all_nodes = self.get_lense_group()
         s = len(all_nodes)
         if s < 2:
             return
 
         s = int(s / 2.0)
-        w_interval = w / (s + 2)
-        h_interval = h / 2.0
+        w_interval = rect[0] / (s + 2)
+        h_interval = rect[1] / 2.0
         for i in range(len(all_nodes)):
             y = (i % 2) * h_interval + 100
             x = (i / 2) * w_interval + 100
