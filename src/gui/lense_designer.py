@@ -1,5 +1,7 @@
 import math
+import PIL
 import dearpygui.dearpygui as dpg
+
 from . import lense_preset
 from typing import List, Any, Callable, Dict
 from base.msg_queue import msg
@@ -7,7 +9,7 @@ from gui.widget import Widget, PropertyWidget, AttributeValueType
 from demo.realistic import RealisticCamera
 import numpy as np
 import networkx as nx
-from . import app
+from PIL import Image
 
 class LenseCanvasWidget(Widget):
     def __init__(self, *, parent: int, film_height=24.0, callback:Callable[[None],None]=None):
@@ -51,7 +53,8 @@ class LenseCanvasWidget(Widget):
         return (self.world_to_screen @ np.array([point[0], point[1], 1.0]))[0:2]
 
     def _draw_frame(self, padding = 5):
-        rect = dpg.get_item_rect_size(self.drawlist())
+        # rect = dpg.get_item_rect_size(self.drawlist())
+        rect = (dpg.get_item_width(self.drawlist()), dpg.get_item_height(self.drawlist()))
         poly = [
             [padding,padding], # topleft
             [rect[0] - padding, padding], # topright
@@ -64,15 +67,14 @@ class LenseCanvasWidget(Widget):
         """
         Updates whenever the lense size or canvas size changes
         """
-        # rect = dpg.get_item_rect_size(self.drawlist())
         w, h = dpg.get_item_width(self.drawlist()), dpg.get_item_height(self.drawlist())
-        rect = (w,h)
+        rect = (w, h)
         self.scale = min(rect[0] / lense_radius, rect[1] / lense_length)
         self.axis_y = rect[1] / 2.0
         self.origin_z = rect[0]/2.0 + lense_length * self.scale / 2.0
         self._setup_transform(self.scale, self.origin_z, self.axis_y)
 
-    def _draw_impl(self, lenses,lense_length, lense_radius):
+    def _draw_impl(self, lenses, lense_length, lense_radius):
         self._update_canvas(lense_length, lense_radius)
         self.clear_drawinglist()
         self._draw_frame()
@@ -96,25 +98,28 @@ class LenseCanvasWidget(Widget):
         self._draw_film()
 
     def draw_lenses(self, lenses:np.ndarray):
-        self.lenses = lenses.copy()
+
+        # workaround
+        rect = dpg.get_item_rect_size(self.widget())
+        dpg.configure_item(self.drawlist(), width=rect[0] - 20,height=rect[1] - 20)
+        ####
 
         length = 0.0
         max_radius = 0.0
-        for i in range(len(self.lenses)):
-            thickness = self.lenses[i][1]
+        for i in range(len(lenses)):
+            thickness = lenses[i][1]
             if math.isnan(thickness):
                 continue
             else:
-                length += self.lenses[i][1]
-            max_radius = max(max_radius, self.lenses[i][3] / 2.0)
+                length += lenses[i][1]
+            max_radius = max(max_radius, lenses[i][3] / 2.0)
+
+        if length == 0.0 or max_radius == 0.0:
+            return
 
         self.lense_length = length
         self.max_radius = max_radius
 
-        # workaround
-        rect = dpg.get_item_rect_size(self.widget())
-        dpg.configure_item(self.drawlist(), width=rect[0],height=rect[1])
-        ####
 
         self._draw_impl(lenses, length, max_radius)
 
@@ -340,10 +345,85 @@ class SceneNode(OutputNode):
 
 class FilmNodeParam(Widget):
     film_size = PropertyWidget(name='FilmSize', property_type=AttributeValueType.ATTRI_FLOATX,min_value=0.0,max_value=1000.0,size=2,width=100)
+    render_window = PropertyWidget(name='RenderWindow', property_type=AttributeValueType.ATTRI_BOOL, width=100)
     def __init__(self, *, parent: int, callback: Callable[[Any], None]):
         super().__init__(parent=parent, callback=callback)
         self._widget_id = parent
         self.film_size = (36.00,24.00)
+        self.render_window = True
+        self._image = Renderer(parent=self.widget())
+
+    def property_changed(self, s, a, u):
+        '''
+        Filters the RenderWindow property changes
+        '''
+        if s == getattr(self, '_RenderWindow'):
+            dpg.configure_item(self._image.widget(), show=a)
+        return super().property_changed(s, a, u)
+
+
+class Renderer(Widget):
+    def __init__(self, parent):
+        super().__init__(parent=parent)
+        with dpg.child(parent=parent, label='Image',height=300,width=400) as self._widget_id:
+            self._texture_container = dpg.add_texture_registry(label='Texture')
+            self._width:int = 0
+            self._height:int = 0
+            self._texture_id:int = None
+
+        # open test image
+        im = Image.open('output.png').resize((400,300))
+        self.from_numpy(np.array(im.transpose(PIL.Image.ROTATE_90))/255.0)
+
+    def _release_texture(self):
+        if self._texture_id is not None:
+            dpg.delete_item(self._texture_id)
+        self._texture_id = None
+
+    def _set_or_recreate_texture(self, width, height, norm_rbga:List[float]):
+        if width <= 0 or height <= 0:
+            return
+        if not self.valid() or self._width != width or self._height != height:
+            self._release_texture()
+            rect = dpg.get_item_rect_size(self.parent())
+            self._texture_id = dpg.add_dynamic_texture(width, height,norm_rbga, parent=self._texture_container)
+            dpg.add_image(self._texture_id,parent=self.widget(), width=rect[0], height=rect[1])
+            self._width = width
+            self._height = height
+            return
+        dpg.set_value(self._texture_id, norm_rbga)
+
+    def set_image_norm_rgba(self,width:int, height:int, rgba:List[float]):
+        """
+        each channel of rgba is range from [0 1]
+        """
+        self._set_or_recreate_texture(width,height,rgba)
+
+    def from_numpy(self, data:np.ndarray):
+        shape = data.shape
+        norm_rgba = []
+        if shape[2] > 4:
+            return
+        if shape[2] == 3:
+            rgba = np.concatenate((data, np.ones((shape[0],shape[1], 1))), axis=2)
+            self.set_image_norm_rgba(shape[0],shape[1],rgba.flatten())
+        elif shape[2] == 4:
+            self.set_image_norm_rgba(shape[0],shape[1],data.flatten())
+        elif shape[2] == 2 or shape[2] == 1:
+            pass
+
+    def to_numpy(self)->np.ndarray:
+        raise NotImplementedError
+
+    def width(self)->int:
+        return self._width
+
+    def height(self)->int:
+        return self._height
+
+    def valid(self)->bool:
+        return self._width > 0 and self._height > 0 and self._texture_id != None
+
 
 class FilmNode(InputNode):
     def __init__(self, parent:int,value_update_callback:Callable[[Any], None]=None):
@@ -353,6 +433,9 @@ class FilmNode(InputNode):
 
     def get_film_size(self):
         return self._param.film_size
+
+    def get_keep_rendering(self):
+        return self._param.render_window
 
 class ApertureSurface(LenseSurface):
     thickness = PropertyWidget('Thickness', AttributeValueType.ATTRI_FLOAT,0.0,100.0,100)
@@ -714,10 +797,11 @@ class LenseEditorWidget(Widget):
     def get_focus_state(self):
         return self._scene_node.get_focus_state()
 
+    def get_keep_rendering(self):
+        return self._film_node.get_keep_rendering()
 
-class RenderWidget(Widget):
-    def __init__(self, *, parent: int, callback: Callable[[Any], None]):
-        super().__init__(parent=parent, callback=callback)
+
+
 
 class LenseDesignerWidget(Widget):
 
@@ -732,7 +816,6 @@ class LenseDesignerWidget(Widget):
             world_up = [0.0, 1.0, 0.0]
             self.camera = RealisticCamera(pos, center, world_up)
 
-        # app.viewport_resize_callback.append(lambda w,h:self._paint_canvas())
 
     def _editor_update(self, *args, **kwargs):
         """

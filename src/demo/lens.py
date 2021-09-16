@@ -494,6 +494,7 @@ real_cam.refocus(4.5)
 # real_cam.refocus(np.linalg.norm(np.array(sp1) - real_cam.get_position()))
 real_cam.recompute_exit_pupil()
 
+
 while gui.running:
     render()
     interval = 2000
@@ -510,4 +511,3 @@ while gui.running:
         gui.set_image(img)
         gui.show()
     i += 1
-

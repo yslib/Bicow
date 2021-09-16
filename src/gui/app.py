@@ -25,7 +25,7 @@ def bind_param_and_event(item:int, param, name, update_callback, type):
 
 msgqueue = get_msg_queue()
 
-viewport_resize_callback = []
+window_resize_callback = []
 
 class App:
     def __init__(self) -> None:
@@ -79,7 +79,7 @@ class App:
         """
         with dpg.child(autosize_x=True, height=200,horizontal_scrollbar=True, parent=parent): # image series preview
             with dpg.group(horizontal=True) as image_container_id:
-                dpg.add_text(label='testttttttttttttt',parent=image_container_id)
+                dpg.add_text(label='test',parent=image_container_id)
                 pass
         return image_container_id
 
@@ -213,29 +213,26 @@ class App:
         dpg.set_item_height(self._gui_id_app, a[3])
         dpg.set_item_width(self._gui_id_app, a[2])
 
-        global viewport_resize_callback
-        for cb in viewport_resize_callback:
-            cb(a[2], a[3])
-
     def _setup_viewport(self):
         if not dpg.is_viewport_created():
             icon = PROJECT_DIR+'/icon.png'
-            vp = dpg.create_viewport(small_icon=icon,title='Bicow', large_icon=icon)
+            vp = dpg.create_viewport(small_icon=icon,title='Bicow', large_icon=icon,width=1920,height=1080)
             dpg.set_viewport_resize_callback(lambda a, b:self._gui_viewport_resize_event(a, b, self._gui_id_app))
             dpg.setup_dearpygui(viewport=vp)
             dpg.show_viewport(vp)
             dpg.set_viewport_title(title='Bicow')
+            # dpg.set_viewport_decorated(False)
+            dpg.set_viewport_resizable(False)
 
     def _setup_window(self):
 
         with dpg.window(label="Cameray",id=self._gui_id_app,
-                        width=400,
-                        height=400,
                         on_close=self._on_app_close,
                         pos=(0, 0),
                         no_title_bar=True,
                         no_move=True,
                         no_resize=True):
+
             with dpg.menu_bar():
                 with dpg.menu(label="File"):
                     def open_folder_callback(s,a,u):
@@ -248,6 +245,7 @@ class App:
 
                     dpg.add_menu_item(label="Open Folder...", callback=open_folder_callback)
                     dpg.add_menu_item(label="Open Bracket...", callback=open_brackets_callback)
+                    dpg.add_menu_item(label='Exit', callback=self._on_app_close)
 
             with dpg.tab_bar():
                 with dpg.tab(label="HDR Timelapse"):
@@ -255,6 +253,10 @@ class App:
 
                 with dpg.tab(label="Lense Designer") as id:
                     self._lense_designer_widget:LenseDesignerWidget = LenseDesignerWidget(id)
+
+    def _window_resize_callback(self, s,a,u):
+        print('window resized: ',s,a,u)
+        pass
 
     def show(self):
         while(dpg.is_dearpygui_running()):
