@@ -220,7 +220,6 @@ class App:
     def _setup_viewport(self):
         if not dpg.is_viewport_created():
             icon = PROJECT_DIR+'/icon.png'
-            print(icon)
             vp = dpg.create_viewport(small_icon=icon,title='Bicow', large_icon=icon)
             dpg.set_viewport_resize_callback(lambda a, b:self._gui_viewport_resize_event(a, b, self._gui_id_app))
             dpg.setup_dearpygui(viewport=vp)

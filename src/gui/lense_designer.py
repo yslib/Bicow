@@ -13,7 +13,7 @@ class LenseCanvasWidget(Widget):
     def __init__(self, *, parent: int, film_height=24.0, callback:Callable[[None],None]=None):
         super().__init__(parent=parent, callback=callback)
         height = 400
-        with dpg.child(parent=parent,autosize_x=True,no_scrollbar=True,height = 400) as self._widget_id:
+        with dpg.child(parent=parent,autosize_x=True,no_scrollbar=True,height=400) as self._widget_id:
             with dpg.drawlist(label='lenses',parent=self._widget_id) as self._drawlist_id:
                 self.film_height = film_height
                 self.axis_y = int(height / 2.0)
@@ -25,8 +25,6 @@ class LenseCanvasWidget(Widget):
                 self.screen_matrix = np.array([[1.0,0.0,0.0], [0.0,1.0 ,0.0],[0.0,0.0,1.0]])
 
         # self._drawlist_id = self.widget()
-        app.viewport_resize_callback.append(lambda w,h:self._draw_impl(self.lense_length, self.max_radius, w, dpg.get_item_height(self.widget())))
-
 
     def drawlist(self):
         return self._drawlist_id
@@ -53,7 +51,7 @@ class LenseCanvasWidget(Widget):
         return (self.world_to_screen @ np.array([point[0], point[1], 1.0]))[0:2]
 
     def _draw_frame(self, padding = 5):
-        rect = dpg.get_item_rect_size(self.widget())
+        rect = dpg.get_item_rect_size(self.drawlist())
         poly = [
             [padding,padding], # topleft
             [rect[0] - padding, padding], # topright
@@ -62,39 +60,37 @@ class LenseCanvasWidget(Widget):
         ]
         dpg.draw_polyline(poly, parent=self.drawlist(),closed=True)
 
-    def _update_canvas(self, lense_length:float, lense_radius:float, w, h):
+    def _update_canvas(self, lense_length:float, lense_radius:float):
         """
         Updates whenever the lense size or canvas size changes
         """
-        # width = (600 + length * self.scale)
-        # height = ( 2 * max_radius ) * self.scale + 100
-        rect = (w, h)
-        dpg.configure_item(self.drawlist(), width=rect[0],height=rect[1])
-
+        # rect = dpg.get_item_rect_size(self.drawlist())
+        w, h = dpg.get_item_width(self.drawlist()), dpg.get_item_height(self.drawlist())
+        rect = (w,h)
         self.scale = min(rect[0] / lense_radius, rect[1] / lense_length)
         self.axis_y = rect[1] / 2.0
         self.origin_z = rect[0]/2.0 + lense_length * self.scale / 2.0
         self._setup_transform(self.scale, self.origin_z, self.axis_y)
 
-    def _draw_impl(self, lense_length, lense_radius, w, h):
-        self._update_canvas(lense_length, lense_radius, w, h)
+    def _draw_impl(self, lenses,lense_length, lense_radius):
+        self._update_canvas(lense_length, lense_radius)
         self.clear_drawinglist()
         self._draw_frame()
         z = lense_length
         # draw lense groups
-        for i in range(len(self.lenses)):
-            is_stop = self.lenses[i][0] == 0.0
-            r = self.lenses[i][3]/2.0
+        for i in range(len(lenses)):
+            is_stop = lenses[i][0] == 0.0
+            r = lenses[i][3]/2.0
             if is_stop:
                 self._draw_aperture_stop(z, r, color=[255.0, 255.0, 0.0], thickness=4.0)
             else:
-                a, b = self._draw_arch(z, self.lenses[i][0], 6.0)
-                if i > 0 and self.lenses[i - 1][2] != 1 and self.lenses[i-1][2] != 0:
+                a, b = self._draw_arch(z, lenses[i][0], 6.0)
+                if i > 0 and lenses[i - 1][2] != 1 and lenses[i-1][2] != 0:
                     self._draw_line(a, first)
                     self._draw_line(b, last)  # draw connection between element surface
                 first, last = a, b
 
-            z -= self.lenses[i][1]
+            z -= lenses[i][1]
 
         self._draw_axis()
         self._draw_film()
@@ -115,9 +111,12 @@ class LenseCanvasWidget(Widget):
         self.lense_length = length
         self.max_radius = max_radius
 
+        # workaround
         rect = dpg.get_item_rect_size(self.widget())
-        self._draw_impl(length, max_radius, rect[0], rect[1])
+        dpg.configure_item(self.drawlist(), width=rect[0],height=rect[1])
+        ####
 
+        self._draw_impl(lenses, length, max_radius)
 
     def draw_bound_rays(self, rays:np.array, count:int, color=[255.0,255.0,255.0,255.0], thickness=1.0):
         points = []
@@ -671,6 +670,8 @@ class LenseEditorWidget(Widget):
     def set_lense_data(self, lense_data:List[List[float]]):
         self._remove_all_node_impl()
         self._add_default_node()
+
+        # parse lense data
         stack = []
         output_end = self._scene_node.output_end()
         for surf in lense_data:
@@ -698,9 +699,10 @@ class LenseEditorWidget(Widget):
             print('Wrong lense data')
 
         self._add_link_impl(output_end=output_end, input_end=self._film_node.input_end())
-        self.auto_arrange()
         # closed
+        # parse data end
 
+        self.auto_arrange()
         self._invoke_update(event=EditorEventType.EVENT_NODE_UPDATE)
 
     def get_film_size(self):
@@ -730,6 +732,8 @@ class LenseDesignerWidget(Widget):
             world_up = [0.0, 1.0, 0.0]
             self.camera = RealisticCamera(pos, center, world_up)
 
+        # app.viewport_resize_callback.append(lambda w,h:self._paint_canvas())
+
     def _editor_update(self, *args, **kwargs):
         """
         Update Realistic camera here
@@ -740,14 +744,17 @@ class LenseDesignerWidget(Widget):
     def _canvas_update(self, *args, **kwargs):
         @msg
         def mainthread_event():
-            self._lense_update(kwargs['lense_data'])
+            self._update_camera(kwargs['lense_data'])
         mainthread_event()
 
-    def _lense_update(self, lense_data):
-        self.camera.load_lens_data(lense_data)
-        self._node_editor.get_focus_state() and self.camera.refocus(self._node_editor.get_focus_depth())
-        self.camera.gen_draw_rays_from_film()
+    def _paint_canvas(self):
         ray_points = self.camera.get_ray_points()
         new_lense_data = self.camera.get_lenses_data()
         self._lense_canvas.draw_lenses(np.array(new_lense_data))
         self._lense_canvas.draw_bound_rays(ray_points, self.camera.get_element_count() + 2, color=[0, 0, 255])
+
+    def _update_camera(self, lense_data):
+        self.camera.load_lens_data(lense_data)
+        self._node_editor.get_focus_state() and self.camera.refocus(self._node_editor.get_focus_depth())
+        self.camera.gen_draw_rays_from_film()
+        self._paint_canvas()
