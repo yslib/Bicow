@@ -450,7 +450,7 @@ inv_stratify = 1.0 / 5.0
 
 
 @ti.kernel
-def render():
+def taichi_render():
     for u, v in color_buffer:
         weight, r = real_cam.gen_ray_of(u, v)
         if weight <= 0.0:
@@ -495,8 +495,31 @@ real_cam.refocus(4.5)
 real_cam.recompute_exit_pupil()
 
 
+class Renderer:
+    def __init__(self):
+        pass
+
+    def render(self):
+        pass
+
+    def clear(self):
+        pass
+
+    def var(self):
+        pass
+
+    def set_camera(self, camera):
+        pass
+
+    def get_camera(self):
+        pass
+
+    def get_color_buffer_to_numpy(self):
+        pass
+
+
 while gui.running:
-    render()
+    taichi_render()
     interval = 2000
     if i % interval == 0 and i > 0:
         img = color_buffer.to_numpy() * (1 / (i + 1))

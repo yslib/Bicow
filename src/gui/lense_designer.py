@@ -351,7 +351,7 @@ class FilmNodeParam(Widget):
         self._widget_id = parent
         self.film_size = (36.00,24.00)
         self.render_window = True
-        self._image = Renderer(parent=self.widget())
+        self._image = ImageViewer(parent=self.widget())
 
     def property_changed(self, s, a, u):
         '''
@@ -362,7 +362,7 @@ class FilmNodeParam(Widget):
         return super().property_changed(s, a, u)
 
 
-class Renderer(Widget):
+class ImageViewer(Widget):
     def __init__(self, parent):
         super().__init__(parent=parent)
         with dpg.child(parent=parent, label='Image',height=300,width=400) as self._widget_id:
@@ -655,7 +655,7 @@ class LenseEditorWidget(Widget):
         dpg.get_selected_nodes may hava a potential BUG
 
         """
-        print("_remove_selected_nodes_impl::dpg.get_selected_nodes may hava a potential BUG, the feature is disabled now")
+        print("_remove_selected_nodes_impl::dpg.get_selected_nodes may hava a potential BUG")
         selected_nodes = dpg.get_selected_nodes(self._editor_id)
         for x in selected_nodes:
             self._remove_node_impl(dpg.get_item_user_data(x))

@@ -7,7 +7,7 @@ sys.path.append('..')
 import dearpygui.dearpygui as dpg
 import bicow.bicow as bc
 from base.imgio import ImageBracket, open_image_as_bracket, open_path_as_brackets
-from base.msg_queue import get_msg_queue, msg
+from base.msg_queue import get_msg_queue, msg, get_coroutine
 from gui.utils import bind_event, bind_param
 from gui.image_widget import ImageWidget
 from gui.list_widget import ImageListWidget
@@ -24,8 +24,7 @@ def bind_param_and_event(item:int, param, name, update_callback, type):
 
 
 msgqueue = get_msg_queue()
-
-window_resize_callback = []
+coroutine = get_coroutine()
 
 class App:
     def __init__(self) -> None:
@@ -259,9 +258,31 @@ class App:
         pass
 
     def show(self):
+        global coroutine
         while(dpg.is_dearpygui_running()):
             while not msgqueue.empty():
                 event = msgqueue.get()
-                callable(event) and event()
+                if callable(event):
+                    cr = event()
+                    if not cr:
+                        continue
+                    try:
+                        next(cr)
+                    except StopIteration:
+                        continue
+                coroutine.append(cr)
+
+            if coroutine:
+                copy_cr = coroutine
+                coroutine = []
+                news = []
+                for cr in copy_cr:
+                    try:
+                        cr.send(0)
+                        news.append(cr)
+                    except StopIteration:
+                        continue
+                coroutine.extend(news)
+
             dpg.render_dearpygui_frame()
         dpg.cleanup_dearpygui()
