@@ -1,15 +1,18 @@
 import math
 import PIL
 import dearpygui.dearpygui as dpg
+import taichi as ti
 
 from . import lense_preset
 from typing import List, Any, Callable, Dict
 from base.msg_queue import msg
 from gui.widget import Widget, PropertyWidget, AttributeValueType
-from demo.realistic import RealisticCamera
+# from demo.realistic import RealisticCamera
 import numpy as np
 import networkx as nx
 from PIL import Image
+
+from demo.lens import real_cam, color_buffer, taichi_render
 
 class LenseCanvasWidget(Widget):
     def __init__(self, *, parent: int, film_height=24.0, callback:Callable[[None],None]=None):
@@ -352,6 +355,34 @@ class FilmNodeParam(Widget):
         self.film_size = (36.00,24.00)
         self.render_window = True
         self._image = ImageViewer(parent=self.widget())
+        self._enable_render = True
+
+
+    @msg
+    def _render(self):
+        i = 0
+        import time
+        color_buffer.from_numpy(np.zeros((800, 600, 3)))
+        last_t = 0.0
+        while True:
+            taichi_render()
+            interval = 50
+            if i % interval == 0 and i > 0:
+                img = color_buffer.to_numpy() * (1 / (i + 1))
+                img = np.sqrt(img / img.mean() * 0.24)
+                var = np.var(img)
+                print(img)
+                print("{:.2f} samples/s ({} iters, var={})".format(
+                    interval / (time.time() - last_t), i, var))
+                last_t = time.time()
+                self._image.from_numpy(img)
+
+            i+=1
+            if self._enable_render:
+                yield
+            else:
+                break
+        return
 
     def property_changed(self, s, a, u):
         '''
@@ -359,21 +390,24 @@ class FilmNodeParam(Widget):
         '''
         if s == getattr(self, '_RenderWindow'):
             dpg.configure_item(self._image.widget(), show=a)
+            self._enable_render = a
+            if a:
+                self._render()
         return super().property_changed(s, a, u)
 
 
 class ImageViewer(Widget):
     def __init__(self, parent):
         super().__init__(parent=parent)
-        with dpg.child(parent=parent, label='Image',height=300,width=400) as self._widget_id:
+        with dpg.child(parent=parent, label='Image',height=600,width=800) as self._widget_id:
             self._texture_container = dpg.add_texture_registry(label='Texture')
             self._width:int = 0
             self._height:int = 0
             self._texture_id:int = None
 
         # open test image
-        im = Image.open('output.png').resize((400,300))
-        self.from_numpy(np.array(im.transpose(PIL.Image.ROTATE_90))/255.0)
+        # im = Image.open('output.png').resize((400,300))
+        # self.from_numpy(np.array(im.transpose(PIL.Image.ROTATE_90))/255.0)
 
     def _release_texture(self):
         if self._texture_id is not None:
@@ -814,7 +848,8 @@ class LenseDesignerWidget(Widget):
             pos = [0.0, 3.0, 24.0]
             center = [0.0, 0.0, 0.0]
             world_up = [0.0, 1.0, 0.0]
-            self.camera = RealisticCamera(pos, center, world_up)
+            # self.camera = RealisticCamera(pos, center, world_up)
+
 
 
     def _editor_update(self, *args, **kwargs):
@@ -831,13 +866,15 @@ class LenseDesignerWidget(Widget):
         mainthread_event()
 
     def _paint_canvas(self):
-        ray_points = self.camera.get_ray_points()
-        new_lense_data = self.camera.get_lenses_data()
+        ray_points = real_cam.get_ray_points()
+        new_lense_data = real_cam.get_lenses_data()
         self._lense_canvas.draw_lenses(np.array(new_lense_data))
-        self._lense_canvas.draw_bound_rays(ray_points, self.camera.get_element_count() + 2, color=[0, 0, 255])
+        self._lense_canvas.draw_bound_rays(ray_points, real_cam.get_element_count() + 2, color=[0, 0, 255])
 
     def _update_camera(self, lense_data):
-        self.camera.load_lens_data(lense_data)
-        self._node_editor.get_focus_state() and self.camera.refocus(self._node_editor.get_focus_depth())
-        self.camera.gen_draw_rays_from_film()
+        real_cam.load_lens_data(lense_data)
+        # real_cam.refocus(np.linalg.norm(np.array(sp1) - real_cam.get_position()))
+        self._node_editor.get_focus_state() and real_cam.refocus(self._node_editor.get_focus_depth())
+        real_cam.recompute_exit_pupil()
+        real_cam.gen_draw_rays_from_film()
         self._paint_canvas()

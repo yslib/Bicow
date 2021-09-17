@@ -60,7 +60,7 @@ class App:
         self._lense_designer_widget:LenseDesignerWidget = None
 
     def _setup_bicow(self):
-        bc.bicow_init()
+        # bc.bicow_init()
         self._bicow_hdr:bc.BicowHDR = None
 
 

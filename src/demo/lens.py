@@ -1,51 +1,11 @@
 import sys
+from numpy.lib.type_check import real
 import taichi as ti
 import time
 import math
 import numpy as np
-from renderer_utils import ray_aabb_intersection, intersect_sphere, ray_plane_intersect, reflect, refract
-from realistic import RealisticCamera
-
-@ti.data_oriented
-class Camera:
-    def __init__(self, res, fov):
-        self.n = 10
-        self.fov = ti.field(ti.f32)
-        self.aspect_ratio = ti.field(ti.f32)
-        self.res = ti.Vector.field(2, ti.i32)
-        self.count_var = ti.field(ti.i32)
-
-        ti.root.place(self.res)
-        ti.root.place(self.aspect_ratio)
-        ti.root.place(self.fov)
-        ti.root.place(self.count_var)
-
-        self.aspect_ratio[None] = float(res[0])/res[1]
-        self.res = ti.Vector([400, 400])
-        self.fov[None] = fov
-
-        self.stratify_res = 5
-        self.inv_stratify = 1.0 / 5.0
-        self.count_var[None] = 0
-
-    @ti.func
-    def gen_ray(self, u:ti.template(), v:ti.template()):
-        cur_iter = self.count_var[None]
-        str_x, str_y = (cur_iter / self.stratify_res), (cur_iter % self.stratify_res)
-        ray_dir = ti.Vector([
-            (2 * self.fov[None] * (u + (str_x) * self.inv_stratify) / res[1] -
-             self.fov[None] * self.aspect_ratio[None] - 1e-5),
-            (2 * self.fov[None] * (v + (str_y) * self.inv_stratify) / res[1] -
-             self.fov[None] - 1e-5),
-            -1.0,
-        ])
-        ray_dir = ray_dir.normalized()
-        return ray_dir
-
-    @ti.func
-    def count_add(self):
-        self.count_var[None] = (self.count_var[None] + 1) % (stratify_res * stratify_res)
-
+from .renderer_utils import ray_aabb_intersection, intersect_sphere, ray_plane_intersect, reflect, refract
+from .realistic import RealisticCamera
 
 ti.init(arch=ti.gpu)
 res = (800, 600)
@@ -93,7 +53,6 @@ sp2_center = ti.Vector([-0.28, 0.55, 0.8])
 sp2_radius = 0.32
 
 
-cam = Camera((600, 400), 0.8)
 
 pos = [0.0, 3.0, 240.0]   # mm
 center = [0.0,0.0,0.0]
@@ -486,7 +445,7 @@ def taichi_render():
         color_buffer[u, v] += weight*acc_color
 
 
-gui = ti.GUI('Realistic camera', res)
+# gui = ti.GUI('Realistic camera', res)
 last_t = time.time()
 i = 0
 
@@ -497,40 +456,48 @@ real_cam.recompute_exit_pupil()
 
 class Renderer:
     def __init__(self):
-        pass
+        self.camera = None
+        self._iter = 0
 
     def render(self):
-        pass
+        taichi_render()
 
     def clear(self):
-        pass
+        color_buffer.from_numpy(np.zeros(res))
+        self._iter = 0
 
     def var(self):
         pass
 
-    def set_camera(self, camera):
-        pass
+    def refocus(self, depth):
+        global real_cam
+        real_cam.refocus(depth)
+
+    def recompute_exit_pupil(self):
+        global real_cam
+        real_cam.recompute_exit_pupil()
 
     def get_camera(self):
-        pass
+        global real_cam
+        return real_cam
 
     def get_color_buffer_to_numpy(self):
-        pass
+        return color_buffer.to_numpy()
 
 
-while gui.running:
-    taichi_render()
-    interval = 2000
-    if i % interval == 0 and i > 0:
-        img = color_buffer.to_numpy() * (1 / (i + 1))
-        img = np.sqrt(img / img.mean() * 0.24)
-        var = np.var(img)
-        if var < 0.11790:
-            ti.imwrite(img, 'output.png')
-            break
-        print("{:.2f} samples/s ({} iters, var={})".format(
-            interval / (time.time() - last_t), i, var))
-        last_t = time.time()
-        gui.set_image(img)
-        gui.show()
-    i += 1
+# while gui.running:
+#     taichi_render()
+#     interval = 2000
+#     if i % interval == 0 and i > 0:
+#         img = color_buffer.to_numpy() * (1 / (i + 1))
+#         img = np.sqrt(img / img.mean() * 0.24)
+#         var = np.var(img)
+#         if var < 0.11790:
+#             ti.imwrite(img, 'output.png')
+#             break
+#         print("{:.2f} samples/s ({} iters, var={})".format(
+#             interval / (time.time() - last_t), i, var))
+#         last_t = time.time()
+#         gui.set_image(img)
+#         gui.show()
+#     i += 1
