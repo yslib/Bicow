@@ -8,8 +8,12 @@ from .renderer_utils import ray_aabb_intersection, intersect_sphere, ray_plane_i
 from .realistic import RealisticCamera
 
 ti.init(arch=ti.gpu)
-res = (800, 600)
+res = (600, 800)
 color_buffer = ti.Vector.field(3, dtype=ti.f32, shape=res)
+# color_buffer = ti.Vector.field(3, dtype=ti.f32)
+
+# ti.root.dense(ti.ji,res).place(color_buffer)
+
 count_var = ti.field(ti.i32, shape=(1, ))
 
 max_ray_depth = 10
@@ -411,7 +415,7 @@ inv_stratify = 1.0 / 5.0
 @ti.kernel
 def taichi_render():
     for u, v in color_buffer:
-        weight, r = real_cam.gen_ray_of(u, v)
+        weight, r = real_cam.gen_ray_of(v, res[0]-u)
         if weight <= 0.0:
             continue
         ray_dir = r[1]

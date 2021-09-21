@@ -193,7 +193,7 @@ class RealisticCamera:
             [-50.945,0,1,37]
         ]
 
-        # lenses = dgauss50
+        lenses = lenses if lenses else dgauss50
         self._elem_count = len(lenses)
         self._lenses_data = lenses.copy()
         for _ in range(max(0, max_elements - self._elem_count)):
@@ -386,6 +386,7 @@ class RealisticCamera:
         Returns the focal length and the z of principal plane
         return fz1, pz1, fz2, pz2 in lense space
         """
+
         x = self.film_diagnal * 0.001
         so = ti.Vector([x, 0.0, self.front_z() + 1.0])
         sd = ti.Vector([0.0, 0.0, -1.0])
@@ -396,7 +397,6 @@ class RealisticCamera:
         assert ok1 == True and ok2 == True
         fz, pz = self.compute_cardinal_points(so, o1, d1)
         fz1, pz1 = self.compute_cardinal_points(fo, o2, d2)
-
         assert fz1 < pz1 and pz < fz
         return fz, pz, fz1, pz1
 
@@ -419,7 +419,8 @@ class RealisticCamera:
 
     @ti.kernel
     def refocus(self, focus_distance:ti.f32):
-        self.thickness[self._elem_count - 1] = self.focus_thick_camera(focus_distance * 1000.0)
+        rf = self.focus_thick_camera(focus_distance * 1000.0)
+        self.thickness[self._elem_count - 1] = rf
 
     @ti.func
     def intersect_with_sphere(self,
